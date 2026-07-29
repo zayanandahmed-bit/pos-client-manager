@@ -80,6 +80,16 @@
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:500;}
   .modal-overlay.show{display:flex;}
   .modal{background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;}
+
+  #receiptContent{font-family:inherit;}
+  #receiptContent .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:14px;}
+  #receiptContent .row span:first-child{color:#666;}
+  @media print{
+    body *{visibility:hidden;}
+    #receiptContent, #receiptContent *{visibility:visible;}
+    #receiptContent{position:absolute;left:0;top:0;width:100%;padding:20px;}
+    .no-print{display:none !important;}
+  }
 </style>
 </head>
 <body>
@@ -119,6 +129,19 @@
 
       <!-- DASHBOARD -->
       <div class="view active" id="view-dashboard">
+        <div class="panel" style="padding:14px;">
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button class="btn secondary small" id="rangeWeekBtn" data-range="week">This Week</button>
+            <button class="btn small" id="rangeMonthBtn" data-range="month">This Month</button>
+            <button class="btn secondary small" id="rangeAllBtn" data-range="all">All Time</button>
+            <button class="btn secondary small" id="rangeCustomBtn" data-range="custom">Custom</button>
+          </div>
+          <div class="grid grid-2" id="dashboardCustomRange" style="display:none;margin-top:12px;">
+            <div><label>From</label><input type="date" id="dashboardRangeFrom"></div>
+            <div><label>To</label><input type="date" id="dashboardRangeTo"></div>
+          </div>
+        </div>
+
         <div class="grid grid-4">
           <div class="panel stat-card" style="border-color:var(--blue);">
             <div class="label">Monthly Recurring Revenue (MRR)</div>
@@ -129,11 +152,11 @@
             <div class="value" id="statActiveClients">0</div>
           </div>
           <div class="panel stat-card" style="border-color:var(--amber);">
-            <div class="label">Collected This Month</div>
+            <div class="label" id="statCollectedLabel">Collected — This Month</div>
             <div class="value" id="statCollected">Rs 0</div>
           </div>
           <div class="panel stat-card" style="border-color:var(--red);">
-            <div class="label">Overdue This Month</div>
+            <div class="label">Overdue</div>
             <div class="value" id="statOverdue">0</div>
           </div>
         </div>
@@ -167,10 +190,11 @@
 
         <div class="panel">
           <div class="flex-between">
-            <h3 style="margin:0;">Clients Overdue This Month</h3>
+            <h3 style="margin:0;">Clients Overdue</h3>
+            <span style="font-size:12px;color:var(--muted);">Click a row to open that client</span>
           </div>
           <table>
-            <thead><tr><th>Store</th><th>Owner</th><th>Phone</th><th>Monthly Fee</th><th></th></tr></thead>
+            <thead><tr><th>Store</th><th>Owner</th><th>Phone</th><th>Monthly Fee</th><th>Status</th><th></th></tr></thead>
             <tbody id="overdueBody"></tbody>
           </table>
           <div id="overdueEmpty" class="empty" style="display:none;">Nobody's overdue — nice.</div>
@@ -357,6 +381,28 @@
             <tbody id="empDetailClientsBody"></tbody>
           </table>
           <div id="empDetailClientsEmpty" class="empty" style="display:none;">Hasn't signed any clients yet.</div>
+        </div>
+      </div>
+
+      <!-- RECEIPT MODAL -->
+      <div class="modal-overlay" id="receiptOverlay">
+        <div class="modal" style="width:420px;">
+          <div id="receiptContent">
+            <h2 style="margin:0 0 4px;">Payment Receipt</h2>
+            <p style="margin:0 0 16px;color:var(--muted);font-size:13px;" id="receiptSubline">—</p>
+            <div class="row"><span>Store</span><span id="receiptStore">—</span></div>
+            <div class="row"><span>Owner</span><span id="receiptOwner">—</span></div>
+            <div class="row"><span>Period Covered</span><span id="receiptPeriod">—</span></div>
+            <div class="row"><span>Amount Paid</span><span id="receiptAmount">—</span></div>
+            <div class="row"><span>Paid Date</span><span id="receiptPaidDate">—</span></div>
+            <div class="row"><span>Method</span><span id="receiptMethod">—</span></div>
+            <div class="row"><span>Notes</span><span id="receiptNotes">—</span></div>
+            <p style="margin-top:16px;font-size:11px;color:var(--muted);">Printed on <span id="receiptPrintedOn"></span> · Receipt ID: <span id="receiptId"></span></p>
+          </div>
+          <div class="row no-print" style="margin-top:18px;">
+            <button class="btn green" id="receiptPrintBtn">Print Receipt</button>
+            <button class="btn secondary" id="receiptCloseBtn">Close</button>
+          </div>
         </div>
       </div>
 
@@ -551,6 +597,20 @@ function saveDirty(){ try{ localStorage.setItem(DIRTY_KEY, JSON.stringify(dirty)
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function money(n){ return "Rs " + (Number(n)||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
 function escapeHtml(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+// One consistent row layout for a single logged payment — used in both the
+// client detail modal's Payment History box and the global Payments tab —
+// so the Receipt/Delete buttons always line up on the right regardless of
+// how long the amount/date/method text on the left is.
+function paymentEntryRow(p){
+  return "<div style='display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;'>" +
+    "<span>" + money(p.amount) + " on " + (p.paidDate||"—") + " (" + escapeHtml(p.method||"—") + ")</span>" +
+    "<span style='display:flex;gap:6px;flex-shrink:0;'>" +
+      "<button class='btn secondary small' onclick='CRM.showReceipt(\"" + p.id + "\")'>Receipt</button>" +
+      "<button class='btn danger small' onclick='CRM.deletePayment(\"" + p.id + "\")'>Delete</button>" +
+    "</span>" +
+  "</div>";
+}
 
 function toast(msg){
   var el = document.getElementById("toast");
@@ -1011,11 +1071,10 @@ function openClientDetail(id){
     else if(fee && total > fee) statusHtml = "<span class='badge low'>Over " + money(total - fee) + "</span>";
     else statusHtml = "<span class='badge ok'>Full</span>";
     var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
-      .map(function(p){ return money(p.amount) + " on " + (p.paidDate||"—") + " (" + escapeHtml(p.method||"—") + ")"; })
-      .join("<br>");
+      .map(paymentEntryRow).join("");
     var logBtn = key === "(no period)" ? "" :
       "<button class='btn secondary small' onclick='CRM.prefillQuickPay(\"" + key + "\")'>Add</button>";
-    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(total) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;color:var(--muted);'>" + entriesHtml + "</td><td>" + logBtn + "</td></tr>";
+    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(total) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;color:var(--muted);min-width:260px;'>" + entriesHtml + "</td><td>" + logBtn + "</td></tr>";
   }).join("");
 
   document.getElementById("clientDetailOverlay").classList.add("show");
@@ -1054,18 +1113,20 @@ document.getElementById("detailQuickPaySaveBtn").addEventListener("click", funct
   var amount = parseFloat(document.getElementById("detailQuickPayAmount").value);
   if(!period){ toast("Pick which month this payment covers."); return; }
   if(isNaN(amount) || amount <= 0){ toast("Enter a valid amount."); return; }
-  state.payments.push({
+  var newPayment = {
     id: uid(), clientId: currentDetailClientId, period: period, amount: amount,
     paidDate: document.getElementById("detailQuickPayDate").value,
     method: document.getElementById("detailQuickPayMethod").value,
     notes: ""
-  });
+  };
+  state.payments.push(newPayment);
   savePayments();
   openClientDetail(currentDetailClientId);
   renderClients();
   renderPayments();
   renderDashboard();
   toast("Payment logged.");
+  showReceipt(newPayment.id);
 });
 
 // ================= EMPLOYEES =================
@@ -1277,11 +1338,8 @@ function renderPayments(){
     else if(fee && groupTotal > fee) statusHtml = "<span class='badge low'>Over " + money(groupTotal - fee) + "</span>";
     else statusHtml = "<span class='badge ok'>Full</span>";
     var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
-      .map(function(p){
-        return money(p.amount) + " on " + (p.paidDate||"—") + " (" + escapeHtml(p.method||"—") + ")" +
-          " <button class='btn danger small' onclick='CRM.deletePayment(\"" + p.id + "\")' style='margin-left:6px;'>Delete</button>";
-      }).join("<br>");
-    return "<tr><td>" + escapeHtml(period) + "</td><td>" + escapeHtml(clientName(clientId)) + "</td><td>" + money(groupTotal) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;'>" + entriesHtml + "</td></tr>";
+      .map(paymentEntryRow).join("");
+    return "<tr><td>" + escapeHtml(period) + "</td><td>" + escapeHtml(clientName(clientId)) + "</td><td>" + money(groupTotal) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;min-width:260px;'>" + entriesHtml + "</td></tr>";
   }).join("");
 }
 document.getElementById("paymentSearch").addEventListener("input", renderPayments);
@@ -1294,18 +1352,20 @@ document.getElementById("savePaymentBtn").addEventListener("click", function(){
   if(!period){ toast("Pick which month this payment covers."); return; }
   if(isNaN(amount) || amount <= 0){ toast("Enter a valid amount."); return; }
 
-  state.payments.push({
+  var newPayment = {
     id: uid(), clientId: clientId, period: period, amount: amount,
     paidDate: document.getElementById("paymentDate").value,
     method: document.getElementById("paymentMethod").value,
     notes: document.getElementById("paymentNotes").value.trim()
-  });
+  };
+  state.payments.push(newPayment);
   savePayments();
   document.getElementById("paymentAmount").value = "";
   document.getElementById("paymentNotes").value = "";
   renderPayments();
   renderDashboard();
   toast("Payment logged.");
+  showReceipt(newPayment.id);
 });
 
 function deletePayment(id){
@@ -1314,8 +1374,37 @@ function deletePayment(id){
   savePayments();
   renderPayments();
   renderDashboard();
+  if(currentDetailClientId) openClientDetail(currentDetailClientId);
   toast("Payment deleted.");
 }
+
+// ================= RECEIPT =================
+function showReceipt(paymentId){
+  var p = state.payments.find(function(x){ return x.id === paymentId; });
+  if(!p) return;
+  var client = state.clients.find(function(c){ return c.id === p.clientId; });
+  document.getElementById("receiptSubline").textContent = client ? client.storeName : "(deleted client)";
+  document.getElementById("receiptStore").textContent = client ? client.storeName : "—";
+  document.getElementById("receiptOwner").textContent = (client && client.ownerName) || "—";
+  document.getElementById("receiptPeriod").textContent = p.period || "—";
+  document.getElementById("receiptAmount").textContent = money(p.amount);
+  document.getElementById("receiptPaidDate").textContent = p.paidDate || "—";
+  document.getElementById("receiptMethod").textContent = p.method || "—";
+  document.getElementById("receiptNotes").textContent = p.notes || "—";
+  document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
+  document.getElementById("receiptId").textContent = p.id;
+  document.getElementById("receiptOverlay").classList.add("show");
+}
+function closeReceipt(){
+  document.getElementById("receiptOverlay").classList.remove("show");
+}
+document.getElementById("receiptCloseBtn").addEventListener("click", closeReceipt);
+document.getElementById("receiptPrintBtn").addEventListener("click", function(){
+  window.print();
+});
+document.getElementById("receiptOverlay").addEventListener("click", function(e){
+  if(e.target === this) closeReceipt();
+});
 
 // ================= DASHBOARD =================
 var charts = {};
@@ -1328,6 +1417,42 @@ function currentPeriodStr(){
   var now = new Date();
   return now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
 }
+
+// ================= DASHBOARD RANGE FILTER =================
+var dashboardRange = { mode: "month" };
+function isoDate(d){ return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+function getDashboardRangeBounds(){
+  var today = new Date();
+  if(dashboardRange.mode === "week"){
+    var weekAgo = new Date(today.getTime());
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    return { from: isoDate(weekAgo), to: isoDate(today), label: "This Week" };
+  }
+  if(dashboardRange.mode === "month"){
+    var first = new Date(today.getFullYear(), today.getMonth(), 1);
+    var last = new Date(today.getFullYear(), today.getMonth()+1, 0);
+    return { from: isoDate(first), to: isoDate(last), label: "This Month" };
+  }
+  if(dashboardRange.mode === "custom"){
+    var from = document.getElementById("dashboardRangeFrom").value || null;
+    var to = document.getElementById("dashboardRangeTo").value || null;
+    return { from: from, to: to, label: "Custom" };
+  }
+  return { from: null, to: null, label: "All Time" };
+}
+["rangeWeekBtn","rangeMonthBtn","rangeAllBtn","rangeCustomBtn"].forEach(function(id){
+  document.getElementById(id).addEventListener("click", function(){
+    dashboardRange.mode = this.dataset.range;
+    ["rangeWeekBtn","rangeMonthBtn","rangeAllBtn","rangeCustomBtn"].forEach(function(otherId){
+      var btn = document.getElementById(otherId);
+      btn.classList.toggle("secondary", otherId !== id);
+    });
+    document.getElementById("dashboardCustomRange").style.display = this.dataset.range === "custom" ? "grid" : "none";
+    renderDashboard();
+  });
+});
+document.getElementById("dashboardRangeFrom").addEventListener("change", renderDashboard);
+document.getElementById("dashboardRangeTo").addEventListener("change", renderDashboard);
 function lastNPeriods(n){
   var periods = [];
   var now = new Date();
@@ -1344,22 +1469,31 @@ function renderDashboard(){
   document.getElementById("statMRR").textContent = money(mrr);
   document.getElementById("statActiveClients").textContent = activeClients.length;
 
-  var period = currentPeriodStr();
-  var thisMonthPayments = state.payments.filter(function(p){ return p.period === period; });
-  var collected = thisMonthPayments.reduce(function(s,p){ return s+(p.amount||0); }, 0);
+  var range = getDashboardRangeBounds();
+  var rangedPayments = state.payments.filter(function(p){
+    if(!p.paidDate) return false;
+    if(range.from && p.paidDate < range.from) return false;
+    if(range.to && p.paidDate > range.to) return false;
+    return true;
+  });
+  var collected = rangedPayments.reduce(function(s,p){ return s+(p.amount||0); }, 0);
   document.getElementById("statCollected").textContent = money(collected);
+  document.getElementById("statCollectedLabel").textContent = "Collected — " + range.label;
 
-  var paidClientIds = {};
-  thisMonthPayments.forEach(function(p){ paidClientIds[p.clientId] = true; });
-  var overdue = activeClients.filter(function(c){ return !paidClientIds[c.id]; });
+  // Uses the same dueInfo() logic that drives every client's own due-status
+  // banner, so "overdue" means the same thing here as it does on the
+  // client's card/detail view — not a separate calendar-month-only check.
+  var overdue = activeClients.filter(function(c){ return dueInfo(c).state === "overdue"; });
   document.getElementById("statOverdue").textContent = overdue.length;
 
   var overdueBody = document.getElementById("overdueBody");
   document.getElementById("overdueEmpty").style.display = overdue.length === 0 ? "block" : "none";
   overdueBody.innerHTML = overdue.map(function(c){
-    return "<tr><td>" + escapeHtml(c.storeName) + "</td><td>" + escapeHtml(c.ownerName||"—") + "</td><td>" +
-      escapeHtml(c.phone||"—") + "</td><td>" + money(c.monthlyFee) + "</td>" +
-      "<td><button class='btn green small' onclick='CRM.jumpToLogPayment(\"" + c.id + "\")'>Log Payment</button></td></tr>";
+    var di = dueInfo(c);
+    return "<tr style='cursor:pointer;' onclick='CRM.openClientDetail(\"" + c.id + "\")'>" +
+      "<td>" + escapeHtml(c.storeName) + "</td><td>" + escapeHtml(c.ownerName||"—") + "</td><td>" +
+      escapeHtml(c.phone||"—") + "</td><td>" + money(c.monthlyFee) + "</td><td>" + escapeHtml(di.label) + "</td>" +
+      "<td><button class='btn green small' onclick='event.stopPropagation();CRM.jumpToLogPayment(\"" + c.id + "\")'>Log Payment</button></td></tr>";
   }).join("");
 
   // Revenue last 12 months
@@ -1551,7 +1685,7 @@ document.getElementById("changeOwnerPasswordBtn").addEventListener("click", func
 window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
   editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail,
-  openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay
+  openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay, showReceipt: showReceipt
 };
 
 // ================= BOOT =================
