@@ -244,3 +244,66 @@ where not exists (select 1 from app_logins where app_name = 'pos-hafiz-dairy');
 insert into app_logins (app_name, username, password_hash)
 select 'client-manager', 'admin', extensions.crypt('changeme123', extensions.gen_salt('bf'))
 where not exists (select 1 from app_logins where app_name = 'client-manager');
+
+-- ============== ADMIN SETTINGS GATE (owner-only, single password) ==============
+-- A SECOND, separate lock inside Settings — even after someone unlocks the
+-- app itself (the shared login everyone uses to open the till), the Cloud
+-- Sync credentials and the app login's own Change Login form stay hidden
+-- behind this extra password, which only you need to know. Same bcrypt
+-- approach as app_logins, just a single password with no username, and its
+-- own table so changing one never affects the other.
+
+create table if not exists admin_settings_passwords (
+  app_name text primary key,
+  password_hash text not null
+);
+alter table admin_settings_passwords enable row level security;
+
+create or replace function verify_admin_settings_password(p_app text, p_password text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_hash text;
+begin
+  select password_hash into v_hash from admin_settings_passwords where app_name = p_app;
+  if v_hash is null then
+    return false;
+  end if;
+  return v_hash = extensions.crypt(p_password, v_hash);
+end;
+$$;
+
+create or replace function set_admin_settings_password(p_app text, p_current_password text, p_new_password text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+  if exists (select 1 from admin_settings_passwords where app_name = p_app) then
+    if not verify_admin_settings_password(p_app, p_current_password) then
+      return false;
+    end if;
+  end if;
+  delete from admin_settings_passwords where app_name = p_app;
+  insert into admin_settings_passwords (app_name, password_hash)
+  values (p_app, extensions.crypt(p_new_password, extensions.gen_salt('bf')));
+  return true;
+end;
+$$;
+
+grant execute on function verify_admin_settings_password(text, text) to anon;
+grant execute on function set_admin_settings_password(text, text, text) to anon;
+
+-- Seed a starting password — CHANGE THIS from the newly-unlocked admin panel
+-- right after setup, since it's visible here in this file.
+insert into admin_settings_passwords (app_name, password_hash)
+select 'pos-hafiz-dairy', extensions.crypt('changeme456', extensions.gen_salt('bf'))
+where not exists (select 1 from admin_settings_passwords where app_name = 'pos-hafiz-dairy');
+
+insert into admin_settings_passwords (app_name, password_hash)
+select 'client-manager', extensions.crypt('changeme456', extensions.gen_salt('bf'))
+where not exists (select 1 from admin_settings_passwords where app_name = 'client-manager');

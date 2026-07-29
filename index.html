@@ -368,35 +368,60 @@
 
       <!-- SETTINGS -->
       <div class="view" id="view-settings">
-        <div class="panel">
-          <h3 style="margin-top:0;">Cloud Sync (Supabase)</h3>
-          <p style="color:var(--muted);font-size:13px;">Uses the SAME Supabase project as your POS app — just new tables (crm_clients, crm_payments). See supabase-schema.sql.</p>
+        <div class="panel" id="ownerGatePanel">
+          <h3 style="margin-top:0;">🔒 Owner Settings</h3>
+          <p style="color:var(--muted);font-size:13px;">Cloud Sync credentials and the app login live behind a second password only you know — separate from the login used to open this dashboard.</p>
           <div class="grid grid-2">
-            <div><label>Supabase Project URL</label><input id="setCloudUrl" placeholder="https://xxxxxxxx.supabase.co"></div>
-            <div><label>Supabase Anon Key</label><input id="setCloudSecret" placeholder="the anon public key"></div>
+            <div><label>Owner Password</label><input type="password" id="ownerGateInput" autocomplete="off"></div>
+            <div style="display:flex;align-items:flex-end;"><button class="btn" id="ownerGateUnlockBtn" style="width:100%;">Unlock</button></div>
           </div>
-          <div class="row" style="margin-top:14px;">
-            <button class="btn secondary" id="cloudSaveBtn">Save Cloud Settings</button>
-            <button class="btn secondary" id="cloudPullBtn">Pull Latest From Cloud</button>
-          </div>
-          <p class="hint" id="cloudLastSync" style="margin-top:8px;font-size:12px;color:var(--muted);"></p>
+          <p style="margin-top:8px;font-size:12px;color:var(--red);" id="ownerGateError"></p>
         </div>
 
-        <div class="panel">
-          <h3 style="margin-top:0;">Change Login</h3>
-          <p style="color:var(--muted);font-size:13px;">Change the username/password used on this app's login screen. You need your current password to change it.</p>
-          <div class="grid grid-2">
-            <div><label>Current Username</label><input id="loginCurrentUsername" autocomplete="username"></div>
-            <div><label>Current Password</label><input type="password" id="loginCurrentPassword" autocomplete="current-password"></div>
+        <div id="ownerGatedSection" style="display:none;">
+          <div class="panel">
+            <h3 style="margin-top:0;">Cloud Sync (Supabase)</h3>
+            <p style="color:var(--muted);font-size:13px;">Uses the SAME Supabase project as your POS app — just new tables (crm_clients, crm_payments). See supabase-schema.sql.</p>
+            <div class="grid grid-2">
+              <div><label>Supabase Project URL</label><input id="setCloudUrl" placeholder="https://xxxxxxxx.supabase.co"></div>
+              <div><label>Supabase Anon Key</label><input id="setCloudSecret" placeholder="the anon public key"></div>
+            </div>
+            <div class="row" style="margin-top:14px;">
+              <button class="btn secondary" id="cloudSaveBtn">Save Cloud Settings</button>
+              <button class="btn secondary" id="cloudPullBtn">Pull Latest From Cloud</button>
+            </div>
+            <p class="hint" id="cloudLastSync" style="margin-top:8px;font-size:12px;color:var(--muted);"></p>
           </div>
-          <div class="grid grid-2" style="margin-top:12px;">
-            <div><label>New Username</label><input id="loginNewUsername" autocomplete="username"></div>
-            <div><label>New Password</label><input type="password" id="loginNewPassword" autocomplete="new-password"></div>
+
+          <div class="panel">
+            <h3 style="margin-top:0;">Change Login</h3>
+            <p style="color:var(--muted);font-size:13px;">Change the username/password used on this app's login screen. You need your current password to change it.</p>
+            <div class="grid grid-2">
+              <div><label>Current Username</label><input id="loginCurrentUsername" autocomplete="username"></div>
+              <div><label>Current Password</label><input type="password" id="loginCurrentPassword" autocomplete="current-password"></div>
+            </div>
+            <div class="grid grid-2" style="margin-top:12px;">
+              <div><label>New Username</label><input id="loginNewUsername" autocomplete="username"></div>
+              <div><label>New Password</label><input type="password" id="loginNewPassword" autocomplete="new-password"></div>
+            </div>
+            <div class="row" style="margin-top:14px;">
+              <button class="btn secondary" id="changeLoginBtn">Change Login</button>
+            </div>
+            <p id="changeLoginStatus" style="margin-top:8px;font-size:12px;"></p>
           </div>
-          <div class="row" style="margin-top:14px;">
-            <button class="btn secondary" id="changeLoginBtn">Change Login</button>
+
+          <div class="panel">
+            <h3 style="margin-top:0;">Change Owner Password</h3>
+            <p style="color:var(--muted);font-size:13px;">This is the password that guards this section — not the login used to open the dashboard.</p>
+            <div class="grid grid-2">
+              <div><label>Current Owner Password</label><input type="password" id="ownerPassCurrentInput" autocomplete="current-password"></div>
+              <div><label>New Owner Password</label><input type="password" id="ownerPassNewInput" autocomplete="new-password"></div>
+            </div>
+            <div class="row" style="margin-top:14px;">
+              <button class="btn secondary" id="changeOwnerPasswordBtn">Change Owner Password</button>
+            </div>
+            <p id="changeOwnerPasswordStatus" style="margin-top:8px;font-size:12px;"></p>
           </div>
-          <p id="changeLoginStatus" style="margin-top:8px;font-size:12px;"></p>
         </div>
       </div>
 
@@ -1168,6 +1193,65 @@ document.getElementById("changeLoginBtn").addEventListener("click", function(){
   }).catch(function(err){
     statusEl.style.color = "var(--red)";
     statusEl.textContent = "Couldn't reach the database: " + err.message;
+  });
+});
+
+// ---- Owner-only gate around Cloud Sync + Change Login ----
+// A second, separate password from the login used to open this dashboard —
+// only the owner needs to know this one. Unlocking is per-session only
+// (resets next time the app loads).
+var OWNER_GATE_APP = LOGIN_APP_NAME;
+document.getElementById("ownerGateUnlockBtn").addEventListener("click", function(){
+  var pass = document.getElementById("ownerGateInput").value;
+  var errEl = document.getElementById("ownerGateError");
+  if(!pass){ errEl.textContent = "Enter the owner password."; return; }
+  errEl.textContent = "Checking…";
+  fetch(BUILT_IN_SUPABASE_URL + "/rest/v1/rpc/verify_admin_settings_password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": BUILT_IN_SUPABASE_ANON_KEY, "Authorization": "Bearer " + BUILT_IN_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ p_app: OWNER_GATE_APP, p_password: pass })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t || ("HTTP " + r.status)); });
+    return r.json();
+  }).then(function(ok){
+    if(ok){
+      document.getElementById("ownerGatePanel").style.display = "none";
+      document.getElementById("ownerGatedSection").style.display = "block";
+    } else {
+      errEl.textContent = "Incorrect owner password.";
+      document.getElementById("ownerGateInput").value = "";
+    }
+  }).catch(function(err){
+    errEl.textContent = "Couldn't reach the database: " + err.message;
+  });
+});
+document.getElementById("ownerGateInput").addEventListener("keydown", function(e){
+  if(e.key === "Enter") document.getElementById("ownerGateUnlockBtn").click();
+});
+
+document.getElementById("changeOwnerPasswordBtn").addEventListener("click", function(){
+  var curPass = document.getElementById("ownerPassCurrentInput").value;
+  var newPass = document.getElementById("ownerPassNewInput").value;
+  var statusEl2 = document.getElementById("changeOwnerPasswordStatus");
+  if(!curPass || !newPass){ statusEl2.textContent = "Fill in both fields."; return; }
+  statusEl2.textContent = "Checking…";
+  fetch(BUILT_IN_SUPABASE_URL + "/rest/v1/rpc/set_admin_settings_password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": BUILT_IN_SUPABASE_ANON_KEY, "Authorization": "Bearer " + BUILT_IN_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ p_app: OWNER_GATE_APP, p_current_password: curPass, p_new_password: newPass })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t || ("HTTP " + r.status)); });
+    return r.json();
+  }).then(function(ok){
+    if(ok){
+      statusEl2.textContent = "Owner password changed.";
+      document.getElementById("ownerPassCurrentInput").value = "";
+      document.getElementById("ownerPassNewInput").value = "";
+    } else {
+      statusEl2.textContent = "Current owner password is incorrect.";
+    }
+  }).catch(function(err){
+    statusEl2.textContent = "Couldn't reach the database: " + err.message;
   });
 });
 
