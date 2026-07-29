@@ -400,11 +400,16 @@
               <div class="row"><span>Owner</span><span id="receiptOwner">—</span></div>
               <div class="row"><span>Period Covered</span><span id="receiptPeriod">—</span></div>
               <div class="row" style="background:#f0fdf4;margin:0 -20px;padding:10px 20px;border-bottom:2px solid #dcfce7;">
-                <span style="font-weight:700;">Amount Paid</span><span id="receiptAmount" style="font-weight:700;color:#166534;font-size:16px;">—</span>
+                <span style="font-weight:700;" id="receiptAmountLabel">Amount Paid</span><span id="receiptAmount" style="font-weight:700;color:#166534;font-size:16px;">—</span>
               </div>
-              <div class="row"><span>Paid Date</span><span id="receiptPaidDate">—</span></div>
-              <div class="row"><span>Method</span><span id="receiptMethod">—</span></div>
+              <div class="row" id="receiptPaidDateRow"><span>Paid Date</span><span id="receiptPaidDate">—</span></div>
+              <div class="row" id="receiptMethodRow"><span>Method</span><span id="receiptMethod">—</span></div>
+              <div id="receiptInstallments" style="display:none;">
+                <div style="font-size:12px;color:var(--muted);margin:12px 0 4px;">Payments making up this month</div>
+                <div id="receiptInstallmentsList"></div>
+              </div>
               <div class="row"><span>Notes</span><span id="receiptNotes">—</span></div>
+              <div id="receiptStatusNote" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;"></div>
 
               <div style="text-align:center;margin:22px 0 6px;padding:14px;border:1px dashed #c7d2e0;border-radius:10px;background:#fafbfc;">
                 <div style="font-size:20px;">🙏</div>
@@ -457,7 +462,7 @@
           </div>
           <input id="paymentSearch" placeholder="Search by store name or period (e.g. 2026-07)..." style="margin-bottom:12px;">
           <table>
-            <thead><tr><th>Period</th><th>Store</th><th>Total Collected</th><th>Status</th><th>Payments</th></tr></thead>
+            <thead><tr><th>Period</th><th>Store</th><th>Total Collected</th><th>Status</th><th>Payments</th><th></th></tr></thead>
             <tbody id="paymentsBody"></tbody>
           </table>
           <div id="paymentsEmpty" class="empty" style="display:none;">No payments logged yet.</div>
@@ -1089,9 +1094,10 @@ function openClientDetail(id){
     else statusHtml = "<span class='badge ok'>Full</span>";
     var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
       .map(paymentEntryRow).join("");
-    var logBtn = key === "(no period)" ? "" :
-      "<button class='btn secondary small' onclick='CRM.prefillQuickPay(\"" + key + "\")'>Add</button>";
-    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(total) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;color:var(--muted);min-width:260px;'>" + entriesHtml + "</td><td>" + logBtn + "</td></tr>";
+    var actionsHtml = key === "(no period)" ? "" :
+      "<button class='btn secondary small' onclick='CRM.prefillQuickPay(\"" + key + "\")'>Add</button> " +
+      "<button class='btn secondary small' onclick='CRM.showMonthReceipt(\"" + c.id + "\",\"" + key + "\")'>Full Receipt</button>";
+    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(total) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;color:var(--muted);min-width:260px;'>" + entriesHtml + "</td><td style='white-space:nowrap;'>" + actionsHtml + "</td></tr>";
   }).join("");
 
   document.getElementById("clientDetailOverlay").classList.add("show");
@@ -1356,7 +1362,9 @@ function renderPayments(){
     else statusHtml = "<span class='badge ok'>Full</span>";
     var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
       .map(paymentEntryRow).join("");
-    return "<tr><td>" + escapeHtml(period) + "</td><td>" + escapeHtml(clientName(clientId)) + "</td><td>" + money(groupTotal) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;min-width:260px;'>" + entriesHtml + "</td></tr>";
+    var fullReceiptBtn = period === "(no period)" ? "" :
+      "<button class='btn secondary small' onclick='CRM.showMonthReceipt(\"" + clientId + "\",\"" + period + "\")'>Full Receipt</button>";
+    return "<tr><td>" + escapeHtml(period) + "</td><td>" + escapeHtml(clientName(clientId)) + "</td><td>" + money(groupTotal) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;min-width:260px;'>" + entriesHtml + "</td><td>" + fullReceiptBtn + "</td></tr>";
   }).join("");
 }
 document.getElementById("paymentSearch").addEventListener("input", renderPayments);
@@ -1400,15 +1408,76 @@ function showReceipt(paymentId){
   var p = state.payments.find(function(x){ return x.id === paymentId; });
   if(!p) return;
   var client = state.clients.find(function(c){ return c.id === p.clientId; });
+  var fee = client ? (client.monthlyFee||0) : 0;
+
   document.getElementById("receiptSubline").textContent = client ? client.storeName : "(deleted client)";
   document.getElementById("receiptOwner").textContent = (client && client.ownerName) || "—";
   document.getElementById("receiptPeriod").textContent = p.period || "—";
+  document.getElementById("receiptAmountLabel").textContent = "Amount Paid";
   document.getElementById("receiptAmount").textContent = money(p.amount);
+  document.getElementById("receiptPaidDateRow").style.display = "";
+  document.getElementById("receiptMethodRow").style.display = "";
   document.getElementById("receiptPaidDate").textContent = p.paidDate || "—";
   document.getElementById("receiptMethod").textContent = p.method || "—";
   document.getElementById("receiptNotes").textContent = p.notes || "—";
+  document.getElementById("receiptInstallments").style.display = "none";
+
+  var statusEl = document.getElementById("receiptStatusNote");
+  if(fee && p.amount < fee){
+    statusEl.style.display = "block";
+    statusEl.style.background = "#fef3c7";
+    statusEl.style.color = "#92400e";
+    statusEl.textContent = "⚠ Partial payment — this transaction covers " + money(p.amount) + " of the " + money(fee) + " monthly fee.";
+  } else {
+    statusEl.style.display = "none";
+  }
+
   document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
   document.getElementById("receiptId").textContent = p.id;
+  document.getElementById("receiptOverlay").classList.add("show");
+}
+
+// Combined receipt for every payment logged against one client+month, with
+// a running total against the fee — for when a month was paid in several
+// installments and a single combined receipt is more useful than several
+// partial ones.
+function showMonthReceipt(clientId, period){
+  var client = state.clients.find(function(c){ return c.id === clientId; });
+  if(!client) return;
+  var entries = state.payments.filter(function(p){ return p.clientId === clientId && (p.period || "(no period)") === period; })
+    .sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); });
+  var total = entries.reduce(function(s,p){ return s + (p.amount||0); }, 0);
+  var fee = client.monthlyFee || 0;
+
+  document.getElementById("receiptSubline").textContent = client.storeName;
+  document.getElementById("receiptOwner").textContent = client.ownerName || "—";
+  document.getElementById("receiptPeriod").textContent = period;
+  document.getElementById("receiptAmountLabel").textContent = "Total Collected";
+  document.getElementById("receiptAmount").textContent = money(total);
+  document.getElementById("receiptPaidDateRow").style.display = "none";
+  document.getElementById("receiptMethodRow").style.display = "none";
+  document.getElementById("receiptNotes").textContent = entries.length + " payment" + (entries.length===1?"":"s") + " logged for this month";
+
+  document.getElementById("receiptInstallmentsList").innerHTML = entries.map(function(p){
+    return "<div class='row'><span>" + (p.paidDate||"—") + " (" + escapeHtml(p.method||"—") + ")</span><span>" + money(p.amount) + "</span></div>";
+  }).join("");
+  document.getElementById("receiptInstallments").style.display = "block";
+
+  var statusEl = document.getElementById("receiptStatusNote");
+  statusEl.style.display = "block";
+  if(fee && total < fee){
+    statusEl.style.background = "#fee2e2"; statusEl.style.color = "#991b1b";
+    statusEl.textContent = "Short by " + money(fee - total) + " against the " + money(fee) + " monthly fee.";
+  } else if(fee && total > fee){
+    statusEl.style.background = "#fef3c7"; statusEl.style.color = "#92400e";
+    statusEl.textContent = "Overpaid by " + money(total - fee) + " against the " + money(fee) + " monthly fee.";
+  } else {
+    statusEl.style.background = "#dcfce7"; statusEl.style.color = "#166534";
+    statusEl.textContent = "Fully paid for this month.";
+  }
+
+  document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
+  document.getElementById("receiptId").textContent = clientId + "-" + period;
   document.getElementById("receiptOverlay").classList.add("show");
 }
 function closeReceipt(){
@@ -1701,7 +1770,8 @@ document.getElementById("changeOwnerPasswordBtn").addEventListener("click", func
 window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
   editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail,
-  openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay, showReceipt: showReceipt
+  openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay, showReceipt: showReceipt,
+  showMonthReceipt: showMonthReceipt
 };
 
 // ================= BOOT =================
