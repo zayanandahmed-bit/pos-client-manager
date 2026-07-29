@@ -208,8 +208,9 @@
               </select>
             </div>
           </div>
-          <div class="grid grid-2" style="margin-top:12px;">
+          <div class="grid grid-3" style="margin-top:12px;">
             <div><label>Web App URL</label><input id="clientWebAppUrl" placeholder="https://zayanandahmed-bit.github.io/their-pos"></div>
+            <div><label>Web App Username</label><input id="clientWebAppUsername" placeholder="Their POS app login username"></div>
             <div><label>Web App Password</label><input id="clientWebAppPassword" placeholder="Their POS app-open password"></div>
           </div>
           <div class="grid grid-2" style="margin-top:12px;">
@@ -252,6 +253,7 @@
           </div>
           <div id="detailDueBanner" style="margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:600;">—</div>
           <div style="margin-top:12px;font-size:13px;"><label>Web App</label><div id="detailWebAppUrl">—</div></div>
+          <div style="margin-top:8px;font-size:13px;"><label>Web App Username</label><div id="detailWebAppUsername">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Web App Password</label><div id="detailWebAppPassword">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Your Owner Password (on their app)</label><div id="detailOwnerPassword">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Notes</label><div id="detailNotes">—</div></div>
@@ -734,6 +736,7 @@ function resetClientForm(){
   document.getElementById("clientAddress").value = "";
   document.getElementById("clientBillingCycle").value = "monthly";
   document.getElementById("clientWebAppUrl").value = "";
+  document.getElementById("clientWebAppUsername").value = "";
   document.getElementById("clientWebAppPassword").value = "";
   document.getElementById("clientOwnerPassword").value = "";
   document.getElementById("clientNotes").value = "";
@@ -761,6 +764,7 @@ document.getElementById("saveClientBtn").addEventListener("click", function(){
     employeeId: document.getElementById("clientEmployee").value,
     billingCycle: document.getElementById("clientBillingCycle").value,
     webAppUrl: document.getElementById("clientWebAppUrl").value.trim(),
+    webAppUsername: document.getElementById("clientWebAppUsername").value.trim(),
     webAppPassword: document.getElementById("clientWebAppPassword").value.trim(),
     ownerPassword: document.getElementById("clientOwnerPassword").value.trim(),
     notes: document.getElementById("clientNotes").value.trim()
@@ -798,6 +802,7 @@ function editClient(id){
   document.getElementById("clientAddress").value = c.address || "";
   document.getElementById("clientBillingCycle").value = c.billingCycle || "monthly";
   document.getElementById("clientWebAppUrl").value = c.webAppUrl || "";
+  document.getElementById("clientWebAppUsername").value = c.webAppUsername || "";
   document.getElementById("clientWebAppPassword").value = c.webAppPassword || "";
   document.getElementById("clientOwnerPassword").value = c.ownerPassword || "";
   document.getElementById("clientNotes").value = c.notes || "";
@@ -855,6 +860,7 @@ function openClientDetail(id){
   var urlEl = document.getElementById("detailWebAppUrl");
   if(c.webAppUrl){ urlEl.innerHTML = "<a href='" + escapeHtml(c.webAppUrl) + "' target='_blank' rel='noopener'>" + escapeHtml(c.webAppUrl) + "</a>"; }
   else { urlEl.textContent = "—"; }
+  document.getElementById("detailWebAppUsername").textContent = c.webAppUsername || "—";
   document.getElementById("detailWebAppPassword").textContent = c.webAppPassword || "—";
   document.getElementById("detailOwnerPassword").textContent = c.ownerPassword || "—";
   document.getElementById("detailNotes").textContent = c.notes || "—";
