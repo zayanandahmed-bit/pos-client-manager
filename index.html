@@ -252,7 +252,6 @@
             <div><label>Next Payment Due</label><div id="detailNextDue">—</div></div>
           </div>
           <div id="detailDueBanner" style="margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:600;">—</div>
-          <div id="detailBalanceBanner" style="display:none;margin-top:8px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:600;background:#fee2e2;color:#991b1b;"></div>
           <div style="margin-top:12px;font-size:13px;"><label>Web App</label><div id="detailWebAppUrl">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Web App Username</label><div id="detailWebAppUsername">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Web App Password</label><div id="detailWebAppPassword">—</div></div>
@@ -635,8 +634,7 @@ document.querySelectorAll(".nav-btn").forEach(function(btn){
 // Due dates stay locked to the calendar day the client signed up on — if
 // they started on the 27th, they're due on the 27th of every month (or
 // every 7th day from that weekday for weekly), no matter what date they
-// actually pay on. Each logged payment advances them exactly one cycle
-// from their start date, so late or early payments never shift the grid.
+// actually pay on or how many separate payments it took to cover a cycle.
 function addCycles(date, n, cycle){
   var d = new Date(date.getTime());
   if(cycle === "weekly") d.setDate(d.getDate() + 7*n);
@@ -652,23 +650,34 @@ function parseDateStr(s){
   return isNaN(d.getTime()) ? null : d;
 }
 
-function clientPaymentCount(c){
-  return state.payments.filter(function(p){ return p.clientId === c.id && p.paidDate; }).length;
-}
-// Compares what a client SHOULD have paid by now (payCount * their fee) against
-// what they've actually handed over. A positive `owed` means they've paid
-// short at some point — doesn't matter which specific cycle it was, since a
-// shortfall just carries forward until they make up the difference.
-function balanceInfo(c){
-  var fee = c.monthlyFee || 0;
-  var payCount = clientPaymentCount(c);
-  var totalPaid = state.payments.filter(function(p){ return p.clientId === c.id; })
-    .reduce(function(s,p){ return s + (p.amount||0); }, 0);
-  var expected = payCount * fee;
-  return { owed: expected - totalPaid, expected: expected, totalPaid: totalPaid };
+// Counts how many billing cycles have started as of today (purely from the
+// calendar grid — start date, start+1cycle, start+2cycle, ...) and finds the
+// next upcoming due point. This is independent of how many payment records
+// exist, so a top-up payment to cover a shortfall never throws off the grid.
+function cyclesElapsed(start, cycle, today){
+  if(midnight(start) > today) return { count:0, nextDue:start };
+  var k = 0;
+  while(midnight(addCycles(start, k+1, cycle)) <= today){ k++; }
+  return { count:k+1, nextDue:addCycles(start, k+1, cycle) };
 }
 
-// Returns { state, days, nextDue, label, cycle } where state is one of:
+// Compares what a client SHOULD have paid by now (cyclesElapsed * their fee)
+// against what they've actually handed over, across ALL logged payments —
+// so a top-up payment for a prior shortfall just adds to totalPaid and the
+// balance clears, without needing to match up periods or payment counts.
+function balanceInfo(c){
+  var fee = c.monthlyFee || 0;
+  var start = parseDateStr(c.startDate);
+  var today = midnight(new Date());
+  if(!start) return { owed:0, expected:0, totalPaid:0, cycles:0, nextDue:null };
+  var ce = cyclesElapsed(start, c.billingCycle || "monthly", today);
+  var totalPaid = state.payments.filter(function(p){ return p.clientId === c.id; })
+    .reduce(function(s,p){ return s + (p.amount||0); }, 0);
+  var expected = ce.count * fee;
+  return { owed: expected - totalPaid, expected:expected, totalPaid:totalPaid, cycles:ce.count, nextDue:ce.nextDue };
+}
+
+// Returns { state, days, nextDue, label, cycle, owed } where state is one of:
 // "overdue" | "due-today" | "ok" | "upcoming" | "unknown" | "inactive"
 function dueInfo(c){
   var cycle = c.billingCycle || "monthly";
@@ -679,22 +688,24 @@ function dueInfo(c){
   if(!start){
     return { state:"unknown", days:0, nextDue:null, cycle:cycle, label:"No start date on record" };
   }
-  var payCount = clientPaymentCount(c);
+  var bal = balanceInfo(c);
   var today = midnight(new Date());
-  var nextDue = addCycles(start, payCount, cycle);
-  var days = Math.round((midnight(nextDue) - today) / 86400000);
+  var daysToNext = Math.round((midnight(bal.nextDue) - today) / 86400000);
 
-  if(days < 0){
-    var lbl = payCount === 0 ? "Never paid — overdue by " : "Overdue by ";
-    return { state:"overdue", days:-days, nextDue:nextDue, cycle:cycle, label:lbl + (-days) + " day" + (-days===1?"":"s") };
+  if(bal.owed > 0){
+    var lastDue = addCycles(start, Math.max(bal.cycles - 1, 0), cycle);
+    var daysLate = Math.round((today - midnight(lastDue)) / 86400000);
+    var lbl = (bal.totalPaid === 0 ? "Never paid — " : "Overdue — ") + money(bal.owed) + " short";
+    if(daysLate > 0) lbl += " (" + daysLate + " day" + (daysLate===1?"":"s") + " late)";
+    return { state:"overdue", days:daysLate, nextDue:bal.nextDue, cycle:cycle, label:lbl, owed:bal.owed };
   }
-  if(days === 0){
-    return { state:"due-today", days:0, nextDue:nextDue, cycle:cycle, label: payCount === 0 ? "First payment due today" : "Due today" };
+  if(daysToNext === 0){
+    return { state:"due-today", days:0, nextDue:bal.nextDue, cycle:cycle, label: bal.cycles === 0 ? "First payment due today" : "Due today" };
   }
-  if(payCount === 0){
-    return { state:"upcoming", days:days, nextDue:nextDue, cycle:cycle, label:"First payment due in " + days + " day" + (days===1?"":"s") };
+  if(bal.cycles === 0){
+    return { state:"upcoming", days:daysToNext, nextDue:bal.nextDue, cycle:cycle, label:"First payment due in " + daysToNext + " day" + (daysToNext===1?"":"s") };
   }
-  return { state:"ok", days:days, nextDue:nextDue, cycle:cycle, label:"Paid — " + days + " day" + (days===1?"":"s") + " till next payment" };
+  return { state:"ok", days:daysToNext, nextDue:bal.nextDue, cycle:cycle, label:"Paid — " + daysToNext + " day" + (daysToNext===1?"":"s") + " till next payment" };
 }
 function dueBadgeClass(st){
   if(st === "overdue") return "out";
@@ -891,15 +902,6 @@ function openClientDetail(id){
   var colors = bannerColors[di.state] || bannerColors.unknown;
   banner.style.background = colors.bg;
   banner.style.color = colors.fg;
-
-  var bal = balanceInfo(c);
-  var balBanner = document.getElementById("detailBalanceBanner");
-  if(bal.owed > 0){
-    balBanner.style.display = "block";
-    balBanner.textContent = "Paid short — " + money(bal.owed) + " still owed against what's due so far";
-  } else {
-    balBanner.style.display = "none";
-  }
 
   var urlEl = document.getElementById("detailWebAppUrl");
   if(c.webAppUrl){ urlEl.innerHTML = "<a href='" + escapeHtml(c.webAppUrl) + "' target='_blank' rel='noopener'>" + escapeHtml(c.webAppUrl) + "</a>"; }
