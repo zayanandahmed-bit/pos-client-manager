@@ -266,8 +266,28 @@
           </div>
 
           <h3 style="margin:20px 0 10px;">Payment History (by month)</h3>
+
+          <div class="panel" style="background:var(--bg-alt,#f8f9fb);padding:12px;margin-bottom:12px;">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Add a payment for a month</div>
+            <div class="grid grid-3">
+              <div><label>Month</label><input type="month" id="detailQuickPayPeriod"></div>
+              <div><label>Amount (PKR)</label><input type="number" id="detailQuickPayAmount" min="0" step="100"></div>
+              <div><label>Paid Date</label><input type="date" id="detailQuickPayDate"></div>
+            </div>
+            <div class="grid grid-2" style="margin-top:10px;">
+              <div><label>Method</label>
+                <select id="detailQuickPayMethod">
+                  <option>Cash</option><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>Other</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:flex-end;">
+                <button class="btn green" id="detailQuickPaySaveBtn" style="width:100%;">Add Payment</button>
+              </div>
+            </div>
+          </div>
+
           <table>
-            <thead><tr><th>Period</th><th>Total Collected</th><th>Status</th><th>Payments</th></tr></thead>
+            <thead><tr><th>Period</th><th>Total Collected</th><th>Status</th><th>Payments</th><th></th></tr></thead>
             <tbody id="detailPaymentsBody"></tbody>
           </table>
           <div id="detailPaymentsEmpty" class="empty" style="display:none;">No payments logged for this client yet.</div>
@@ -951,6 +971,10 @@ function openClientDetail(id){
   document.getElementById("detailOwnerPassword").textContent = c.ownerPassword || "—";
   document.getElementById("detailNotes").textContent = c.notes || "—";
 
+  document.getElementById("detailQuickPayPeriod").value = di.nextDue ? monthKey(di.nextDue) : monthKey(new Date());
+  document.getElementById("detailQuickPayAmount").value = "";
+  document.getElementById("detailQuickPayDate").value = new Date().toISOString().slice(0,10);
+
   var clientPayments = state.payments.filter(function(p){ return p.clientId === id; });
   var tbody = document.getElementById("detailPaymentsBody");
   var empty = document.getElementById("detailPaymentsEmpty");
@@ -977,7 +1001,9 @@ function openClientDetail(id){
     var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
       .map(function(p){ return money(p.amount) + " on " + (p.paidDate||"—") + " (" + escapeHtml(p.method||"—") + ")"; })
       .join("<br>");
-    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(total) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;color:var(--muted);'>" + entriesHtml + "</td></tr>";
+    var logBtn = key === "(no period)" ? "" :
+      "<button class='btn secondary small' onclick='CRM.prefillQuickPay(\"" + key + "\")'>Add</button>";
+    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(total) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;color:var(--muted);'>" + entriesHtml + "</td><td>" + logBtn + "</td></tr>";
   }).join("");
 
   document.getElementById("clientDetailOverlay").classList.add("show");
@@ -994,11 +1020,40 @@ document.getElementById("detailEditBtn").addEventListener("click", function(){
   if(currentDetailClientId) editClient(currentDetailClientId);
 });
 document.getElementById("detailLogPaymentBtn").addEventListener("click", function(){
-  if(currentDetailClientId) jumpToLogPayment(currentDetailClientId);
-  closeClientDetail();
+  document.getElementById("detailQuickPayAmount").focus();
+  document.getElementById("detailQuickPayAmount").scrollIntoView({ behavior:"smooth", block:"center" });
 });
 document.getElementById("detailDeleteBtn").addEventListener("click", function(){
   if(currentDetailClientId) deleteClient(currentDetailClientId);
+});
+
+// Fills the quick-pay box's Month field with a specific period (used by each
+// month row's "Add" button) so topping up an existing month is one click
+// away instead of retyping the period.
+function prefillQuickPay(period){
+  document.getElementById("detailQuickPayPeriod").value = period;
+  document.getElementById("detailQuickPayAmount").focus();
+  document.getElementById("detailQuickPayAmount").scrollIntoView({ behavior:"smooth", block:"center" });
+}
+
+document.getElementById("detailQuickPaySaveBtn").addEventListener("click", function(){
+  if(!currentDetailClientId) return;
+  var period = document.getElementById("detailQuickPayPeriod").value;
+  var amount = parseFloat(document.getElementById("detailQuickPayAmount").value);
+  if(!period){ toast("Pick which month this payment covers."); return; }
+  if(isNaN(amount) || amount <= 0){ toast("Enter a valid amount."); return; }
+  state.payments.push({
+    id: uid(), clientId: currentDetailClientId, period: period, amount: amount,
+    paidDate: document.getElementById("detailQuickPayDate").value,
+    method: document.getElementById("detailQuickPayMethod").value,
+    notes: ""
+  });
+  savePayments();
+  openClientDetail(currentDetailClientId);
+  renderClients();
+  renderPayments();
+  renderDashboard();
+  toast("Payment logged.");
 });
 
 // ================= EMPLOYEES =================
@@ -1464,7 +1519,7 @@ document.getElementById("changeOwnerPasswordBtn").addEventListener("click", func
 window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
   editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail,
-  openEmployeeDetail: openEmployeeDetail
+  openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay
 };
 
 // ================= BOOT =================
