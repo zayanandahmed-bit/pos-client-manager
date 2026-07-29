@@ -265,9 +265,9 @@
             <button class="btn secondary small" id="detailCloseBtn">Close</button>
           </div>
 
-          <h3 style="margin:20px 0 10px;">Payment History</h3>
+          <h3 style="margin:20px 0 10px;">Payment History (by month)</h3>
           <table>
-            <thead><tr><th>Period</th><th>Amount</th><th>Paid Date</th><th>Method</th></tr></thead>
+            <thead><tr><th>Period</th><th>Total Collected</th><th>Status</th><th>Payments</th></tr></thead>
             <tbody id="detailPaymentsBody"></tbody>
           </table>
           <div id="detailPaymentsEmpty" class="empty" style="display:none;">No payments logged for this client yet.</div>
@@ -912,14 +912,33 @@ function openClientDetail(id){
   document.getElementById("detailOwnerPassword").textContent = c.ownerPassword || "—";
   document.getElementById("detailNotes").textContent = c.notes || "—";
 
-  var clientPayments = state.payments.filter(function(p){ return p.clientId === id; })
-    .sort(function(a,b){ return (b.period||"").localeCompare(a.period||""); });
+  var clientPayments = state.payments.filter(function(p){ return p.clientId === id; });
   var tbody = document.getElementById("detailPaymentsBody");
   var empty = document.getElementById("detailPaymentsEmpty");
   empty.style.display = clientPayments.length === 0 ? "block" : "none";
-  tbody.innerHTML = clientPayments.map(function(p){
-    return "<tr><td>" + escapeHtml(p.period) + "</td><td>" + paymentAmountCell(p, c.monthlyFee) + "</td><td>" +
-      (p.paidDate||"—") + "</td><td>" + escapeHtml(p.method||"—") + "</td></tr>";
+
+  // Group into one box per month/period, since a client may cover one
+  // cycle across several partial payments — the box shows what actually
+  // matters: the combined total for that period vs. the fee.
+  var byPeriod = {};
+  clientPayments.forEach(function(p){
+    var key = p.period || "(no period)";
+    if(!byPeriod[key]) byPeriod[key] = [];
+    byPeriod[key].push(p);
+  });
+  var periodKeys = Object.keys(byPeriod).sort().reverse();
+  var fee = c.monthlyFee || 0;
+  tbody.innerHTML = periodKeys.map(function(key){
+    var entries = byPeriod[key];
+    var total = entries.reduce(function(s,p){ return s + (p.amount||0); }, 0);
+    var statusHtml;
+    if(fee && total < fee) statusHtml = "<span class='badge out'>Short " + money(fee - total) + "</span>";
+    else if(fee && total > fee) statusHtml = "<span class='badge low'>Over " + money(total - fee) + "</span>";
+    else statusHtml = "<span class='badge ok'>Full</span>";
+    var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
+      .map(function(p){ return money(p.amount) + " on " + (p.paidDate||"—") + " (" + escapeHtml(p.method||"—") + ")"; })
+      .join("<br>");
+    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(total) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;color:var(--muted);'>" + entriesHtml + "</td></tr>";
   }).join("");
 
   document.getElementById("clientDetailOverlay").classList.add("show");
