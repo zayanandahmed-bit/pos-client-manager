@@ -178,7 +178,11 @@ grant execute on function sync_replace_crm_employees(jsonb) to anon;
 -- the page's source no longer reveals the password, and you can change
 -- it any time from Settings without needing to touch code or re-run SQL.
 
-create extension if not exists pgcrypto;
+-- Supabase installs pgcrypto into the "extensions" schema by default, not
+-- "public" — every call below is schema-qualified (extensions.crypt(...))
+-- instead of relying on search_path, so this works regardless of which
+-- schema it lands in.
+create extension if not exists pgcrypto with schema extensions;
 
 create table if not exists app_logins (
   app_name text not null,
@@ -192,7 +196,7 @@ create or replace function verify_app_login(p_app text, p_username text, p_passw
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_hash text;
@@ -201,7 +205,7 @@ begin
   if v_hash is null then
     return false;
   end if;
-  return v_hash = crypt(p_password, v_hash);
+  return v_hash = extensions.crypt(p_password, v_hash);
 end;
 $$;
 
@@ -212,7 +216,7 @@ create or replace function set_app_login(p_app text, p_username text, p_current_
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   if not verify_app_login(p_app, p_username, p_current_password) then
@@ -220,7 +224,7 @@ begin
   end if;
   delete from app_logins where app_name = p_app and username = p_username;
   insert into app_logins (app_name, username, password_hash)
-  values (p_app, p_new_username, crypt(p_new_password, gen_salt('bf')));
+  values (p_app, p_new_username, extensions.crypt(p_new_password, extensions.gen_salt('bf')));
   return true;
 end;
 $$;
@@ -234,9 +238,9 @@ grant execute on function set_app_login(text, text, text, text, text) to anon;
 -- username), so re-running this file after you've changed the username
 -- never silently re-adds the old default alongside your real one.
 insert into app_logins (app_name, username, password_hash)
-select 'pos-hafiz-dairy', 'admin', crypt('changeme123', gen_salt('bf'))
+select 'pos-hafiz-dairy', 'admin', extensions.crypt('changeme123', extensions.gen_salt('bf'))
 where not exists (select 1 from app_logins where app_name = 'pos-hafiz-dairy');
 
 insert into app_logins (app_name, username, password_hash)
-select 'client-manager', 'admin', crypt('changeme123', gen_salt('bf'))
+select 'client-manager', 'admin', extensions.crypt('changeme123', extensions.gen_salt('bf'))
 where not exists (select 1 from app_logins where app_name = 'client-manager');
