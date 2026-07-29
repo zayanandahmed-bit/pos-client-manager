@@ -714,12 +714,13 @@ function dueBadgeClass(st){
   if(st === "upcoming") return "muted";
   return "";
 }
+// Deliberately does NOT flag a single row as "short" against the fee — a
+// client can legitimately cover one cycle across two or more payments (e.g.
+// 17,000 + 1,000 = 18,000), and flagging each partial row would look wrong.
+// Whether they're actually behind is judged in aggregate by balanceInfo()
+// and shown on the client's due-status banner instead.
 function paymentAmountCell(p, fee){
-  var out = money(p.amount);
-  if(fee && p.amount < fee){
-    out += " <span class='badge out' style='margin-left:6px;'>Short " + money(fee - p.amount) + "</span>";
-  }
-  return out;
+  return money(p.amount);
 }
 function fmtDate(d){
   if(!d) return "—";
