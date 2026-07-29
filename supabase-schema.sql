@@ -42,7 +42,9 @@ create table if not exists crm_clients (
   notes text default '',
   employee_id text default '', -- which employee signed this client
   web_app_url text default '', -- this client's deployed POS app link
-  web_app_password text default '' -- this client's POS app-open password
+  web_app_password text default '', -- this client's POS app-open password
+  owner_password text default '', -- YOUR owner-settings password on their app (reference only)
+  billing_cycle text default 'monthly' -- monthly | weekly
 );
 
 -- Columns added after the table already existed for some setups — safe to
@@ -50,6 +52,8 @@ create table if not exists crm_clients (
 alter table crm_clients add column if not exists employee_id text default '';
 alter table crm_clients add column if not exists web_app_url text default '';
 alter table crm_clients add column if not exists web_app_password text default '';
+alter table crm_clients add column if not exists owner_password text default '';
+alter table crm_clients add column if not exists billing_cycle text default 'monthly';
 
 create table if not exists crm_payments (
   id text primary key,
@@ -85,7 +89,8 @@ begin
       'id', id, 'storeName', store_name, 'ownerName', owner_name, 'phone', phone,
       'address', address, 'monthlyFee', monthly_fee, 'status', status,
       'startDate', start_date, 'notes', notes, 'employeeId', employee_id,
-      'webAppUrl', web_app_url, 'webAppPassword', web_app_password
+      'webAppUrl', web_app_url, 'webAppPassword', web_app_password, 'ownerPassword', owner_password,
+      'billingCycle', billing_cycle
     )) from crm_clients), '[]'::jsonb),
 
     'payments', coalesce((select jsonb_agg(jsonb_build_object(
@@ -112,11 +117,12 @@ set search_path = public
 as $$
 begin
   delete from crm_clients where true;
-  insert into crm_clients (id, store_name, owner_name, phone, address, monthly_fee, status, start_date, notes, employee_id, web_app_url, web_app_password)
+  insert into crm_clients (id, store_name, owner_name, phone, address, monthly_fee, status, start_date, notes, employee_id, web_app_url, web_app_password, owner_password, billing_cycle)
   select x->>'id', x->>'storeName', coalesce(x->>'ownerName',''), coalesce(x->>'phone',''),
          coalesce(x->>'address',''), coalesce((x->>'monthlyFee')::numeric,0), coalesce(x->>'status','active'),
          nullif(x->>'startDate','')::date, coalesce(x->>'notes',''), coalesce(x->>'employeeId',''),
-         coalesce(x->>'webAppUrl',''), coalesce(x->>'webAppPassword','')
+         coalesce(x->>'webAppUrl',''), coalesce(x->>'webAppPassword',''), coalesce(x->>'ownerPassword',''),
+         coalesce(x->>'billingCycle','monthly')
   from jsonb_array_elements(clients) x;
 end;
 $$;

@@ -198,13 +198,22 @@
             </div>
             <div><label>Start Date</label><input type="date" id="clientStartDate"></div>
           </div>
-          <div class="grid grid-2" style="margin-top:12px;">
+          <div class="grid grid-3" style="margin-top:12px;">
             <div><label>Signed By (Employee)</label><select id="clientEmployee"><option value="">— none —</option></select></div>
             <div><label>Address</label><input id="clientAddress" placeholder="Optional"></div>
+            <div><label>Billing Cycle</label>
+              <select id="clientBillingCycle">
+                <option value="monthly">Monthly</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
           </div>
           <div class="grid grid-2" style="margin-top:12px;">
             <div><label>Web App URL</label><input id="clientWebAppUrl" placeholder="https://zayanandahmed-bit.github.io/their-pos"></div>
             <div><label>Web App Password</label><input id="clientWebAppPassword" placeholder="Their POS app-open password"></div>
+          </div>
+          <div class="grid grid-2" style="margin-top:12px;">
+            <div><label>Your Owner Password (on their app)</label><input id="clientOwnerPassword" placeholder="Reference only — your admin settings password there"></div>
           </div>
           <div style="margin-top:12px;"><label>Notes</label><input id="clientNotes" placeholder="Optional"></div>
           <div class="row" style="margin-top:14px;">
@@ -238,9 +247,13 @@
             <div><label>Start Date</label><div id="detailStartDate">—</div></div>
             <div><label>Signed By</label><div id="detailEmployee">—</div></div>
             <div><label>Address</label><div id="detailAddress">—</div></div>
+            <div><label>Billing Cycle</label><div id="detailBillingCycle">—</div></div>
+            <div><label>Next Payment Due</label><div id="detailNextDue">—</div></div>
           </div>
+          <div id="detailDueBanner" style="margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:600;">—</div>
           <div style="margin-top:12px;font-size:13px;"><label>Web App</label><div id="detailWebAppUrl">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Web App Password</label><div id="detailWebAppPassword">—</div></div>
+          <div style="margin-top:8px;font-size:13px;"><label>Your Owner Password (on their app)</label><div id="detailOwnerPassword">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Notes</label><div id="detailNotes">—</div></div>
 
           <div class="row" style="margin-top:16px;">
@@ -615,6 +628,57 @@ document.querySelectorAll(".nav-btn").forEach(function(btn){
   });
 });
 
+// ================= BILLING CYCLE / DUE DATES =================
+// Works off the client's LAST recorded payment: next due = that payment's
+// date + one billing cycle. If they've never paid, the clock starts from
+// their start date instead, so a brand-new client shows as due one cycle
+// after signing rather than immediately.
+function addCycle(date, cycle){
+  var d = new Date(date.getTime());
+  if(cycle === "weekly") d.setDate(d.getDate() + 7);
+  else d.setMonth(d.getMonth() + 1);
+  return d;
+}
+function midnight(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function parseDateStr(s){
+  if(!s) return null;
+  var parts = String(s).split("-");
+  if(parts.length !== 3) return null;
+  var d = new Date(+parts[0], +parts[1]-1, +parts[2]);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Returns { state, days, nextDue, label, cycle } where state is one of:
+// "overdue" | "due-today" | "ok" | "unknown" | "inactive"
+function dueInfo(c){
+  var cycle = c.billingCycle || "monthly";
+  if(c.status !== "active"){
+    return { state:"inactive", days:0, nextDue:null, cycle:cycle, label:"Not billing (" + (c.status||"inactive") + ")" };
+  }
+  var pays = state.payments.filter(function(p){ return p.clientId === c.id && p.paidDate; })
+    .sort(function(a,b){ return (b.paidDate||"").localeCompare(a.paidDate||""); });
+  var anchor = pays.length ? parseDateStr(pays[0].paidDate) : parseDateStr(c.startDate);
+  if(!anchor){
+    return { state:"unknown", days:0, nextDue:null, cycle:cycle, label:"No start date or payment on record" };
+  }
+  var nextDue = addCycle(anchor, cycle);
+  var today = midnight(new Date());
+  var days = Math.round((midnight(nextDue) - today) / 86400000);
+  if(days < 0)  return { state:"overdue",   days:-days, nextDue:nextDue, cycle:cycle, label:"Overdue by " + (-days) + " day" + (-days===1?"":"s") };
+  if(days === 0) return { state:"due-today", days:0,     nextDue:nextDue, cycle:cycle, label:"Due today" };
+  return { state:"ok", days:days, nextDue:nextDue, cycle:cycle, label:"Paid — " + days + " day" + (days===1?"":"s") + " till next payment" };
+}
+function dueBadgeClass(st){
+  if(st === "overdue") return "out";
+  if(st === "due-today") return "low";
+  if(st === "ok") return "ok";
+  return "";
+}
+function fmtDate(d){
+  if(!d) return "—";
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+
 // ================= CLIENTS =================
 function renderClients(){
   var grid = document.getElementById("clientsCardGrid");
@@ -632,13 +696,19 @@ function renderClients(){
 
   grid.innerHTML = sorted.map(function(c){
     var badgeClass = c.status === "active" ? "ok" : (c.status === "paused" ? "low" : "out");
+    var di = dueInfo(c);
+    var cycleLabel = (c.billingCycle === "weekly") ? "/wk" : "/mo";
+    var dueLine = di.state === "inactive" ? "" :
+      "<div style='margin-top:6px;font-size:12px;'><span class='badge " + dueBadgeClass(di.state) + "'>" +
+        escapeHtml(di.label) + "</span></div>";
     return "<div class='client-card' onclick='CRM.openClientDetail(\"" + c.id + "\")'>" +
       "<div class='name'>" + escapeHtml(c.storeName) + "</div>" +
       "<div style='font-size:12px;color:var(--muted);'>" + escapeHtml(c.ownerName||"No owner listed") + "</div>" +
       "<div class='row2'>" +
-        "<span>" + money(c.monthlyFee) + "/mo</span>" +
+        "<span>" + money(c.monthlyFee) + cycleLabel + "</span>" +
         "<span class='badge " + badgeClass + "'>" + escapeHtml(c.status) + "</span>" +
       "</div>" +
+      dueLine +
     "</div>";
   }).join("");
 }
@@ -662,8 +732,10 @@ function resetClientForm(){
   document.getElementById("clientStartDate").value = new Date().toISOString().slice(0,10);
   document.getElementById("clientEmployee").value = "";
   document.getElementById("clientAddress").value = "";
+  document.getElementById("clientBillingCycle").value = "monthly";
   document.getElementById("clientWebAppUrl").value = "";
   document.getElementById("clientWebAppPassword").value = "";
+  document.getElementById("clientOwnerPassword").value = "";
   document.getElementById("clientNotes").value = "";
   document.getElementById("clientFormTitle").textContent = "Add New Client";
   document.getElementById("saveClientBtn").textContent = "Add Client";
@@ -687,8 +759,10 @@ document.getElementById("saveClientBtn").addEventListener("click", function(){
     status: document.getElementById("clientStatus").value,
     startDate: document.getElementById("clientStartDate").value,
     employeeId: document.getElementById("clientEmployee").value,
+    billingCycle: document.getElementById("clientBillingCycle").value,
     webAppUrl: document.getElementById("clientWebAppUrl").value.trim(),
     webAppPassword: document.getElementById("clientWebAppPassword").value.trim(),
+    ownerPassword: document.getElementById("clientOwnerPassword").value.trim(),
     notes: document.getElementById("clientNotes").value.trim()
   };
 
@@ -722,8 +796,10 @@ function editClient(id){
   document.getElementById("clientStartDate").value = c.startDate || "";
   document.getElementById("clientEmployee").value = c.employeeId || "";
   document.getElementById("clientAddress").value = c.address || "";
+  document.getElementById("clientBillingCycle").value = c.billingCycle || "monthly";
   document.getElementById("clientWebAppUrl").value = c.webAppUrl || "";
   document.getElementById("clientWebAppPassword").value = c.webAppPassword || "";
+  document.getElementById("clientOwnerPassword").value = c.ownerPassword || "";
   document.getElementById("clientNotes").value = c.notes || "";
   document.getElementById("clientFormTitle").textContent = "Edit Client";
   document.getElementById("saveClientBtn").textContent = "Save Changes";
@@ -759,11 +835,28 @@ function openClientDetail(id){
   document.getElementById("detailStartDate").textContent = c.startDate || "—";
   document.getElementById("detailEmployee").textContent = employeeName(c.employeeId);
   document.getElementById("detailAddress").textContent = c.address || "—";
+  document.getElementById("detailBillingCycle").textContent = c.billingCycle === "weekly" ? "Weekly" : "Monthly";
+
+  var di = dueInfo(c);
+  document.getElementById("detailNextDue").textContent = di.nextDue ? fmtDate(di.nextDue) : "—";
+  var banner = document.getElementById("detailDueBanner");
+  banner.textContent = di.label;
+  var bannerColors = {
+    overdue:   { bg:"#fee2e2", fg:"#991b1b" },
+    "due-today": { bg:"#fef3c7", fg:"#92400e" },
+    ok:        { bg:"#dcfce7", fg:"#166534" },
+    unknown:   { bg:"#f1f5f9", fg:"#475569" },
+    inactive:  { bg:"#f1f5f9", fg:"#475569" }
+  };
+  var colors = bannerColors[di.state] || bannerColors.unknown;
+  banner.style.background = colors.bg;
+  banner.style.color = colors.fg;
 
   var urlEl = document.getElementById("detailWebAppUrl");
   if(c.webAppUrl){ urlEl.innerHTML = "<a href='" + escapeHtml(c.webAppUrl) + "' target='_blank' rel='noopener'>" + escapeHtml(c.webAppUrl) + "</a>"; }
   else { urlEl.textContent = "—"; }
   document.getElementById("detailWebAppPassword").textContent = c.webAppPassword || "—";
+  document.getElementById("detailOwnerPassword").textContent = c.ownerPassword || "—";
   document.getElementById("detailNotes").textContent = c.notes || "—";
 
   var clientPayments = state.payments.filter(function(p){ return p.clientId === id; })
