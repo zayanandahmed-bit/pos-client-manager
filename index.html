@@ -631,14 +631,15 @@ document.querySelectorAll(".nav-btn").forEach(function(btn){
 });
 
 // ================= BILLING CYCLE / DUE DATES =================
-// The client pays ON their start date to get the software — so the first
-// payment is due on that date, not one cycle after it. Once a payment is
-// actually logged, the next due date becomes that payment's date + one
-// billing cycle.
-function addCycle(date, cycle){
+// Due dates stay locked to the calendar day the client signed up on — if
+// they started on the 27th, they're due on the 27th of every month (or
+// every 7th day from that weekday for weekly), no matter what date they
+// actually pay on. Each logged payment advances them exactly one cycle
+// from their start date, so late or early payments never shift the grid.
+function addCycles(date, n, cycle){
   var d = new Date(date.getTime());
-  if(cycle === "weekly") d.setDate(d.getDate() + 7);
-  else d.setMonth(d.getMonth() + 1);
+  if(cycle === "weekly") d.setDate(d.getDate() + 7*n);
+  else d.setMonth(d.getMonth() + n);
   return d;
 }
 function midnight(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
@@ -657,27 +658,25 @@ function dueInfo(c){
   if(c.status !== "active"){
     return { state:"inactive", days:0, nextDue:null, cycle:cycle, label:"Not billing (" + (c.status||"inactive") + ")" };
   }
-  var today = midnight(new Date());
-  var pays = state.payments.filter(function(p){ return p.clientId === c.id && p.paidDate; })
-    .sort(function(a,b){ return (b.paidDate||"").localeCompare(a.paidDate||""); });
-
-  if(!pays.length){
-    // Never paid — the due date is their start date itself, not a cycle later.
-    var start = parseDateStr(c.startDate);
-    if(!start){
-      return { state:"unknown", days:0, nextDue:null, cycle:cycle, label:"No start date or payment on record" };
-    }
-    var startDays = Math.round((midnight(start) - today) / 86400000);
-    if(startDays < 0) return { state:"overdue", days:-startDays, nextDue:start, cycle:cycle, label:"Never paid — overdue by " + (-startDays) + " day" + (-startDays===1?"":"s") };
-    if(startDays === 0) return { state:"due-today", days:0, nextDue:start, cycle:cycle, label:"First payment due today" };
-    return { state:"upcoming", days:startDays, nextDue:start, cycle:cycle, label:"First payment due in " + startDays + " day" + (startDays===1?"":"s") };
+  var start = parseDateStr(c.startDate);
+  if(!start){
+    return { state:"unknown", days:0, nextDue:null, cycle:cycle, label:"No start date on record" };
   }
-
-  var anchor = parseDateStr(pays[0].paidDate);
-  var nextDue = addCycle(anchor, cycle);
+  var payCount = state.payments.filter(function(p){ return p.clientId === c.id && p.paidDate; }).length;
+  var today = midnight(new Date());
+  var nextDue = addCycles(start, payCount, cycle);
   var days = Math.round((midnight(nextDue) - today) / 86400000);
-  if(days < 0)  return { state:"overdue",   days:-days, nextDue:nextDue, cycle:cycle, label:"Overdue by " + (-days) + " day" + (-days===1?"":"s") };
-  if(days === 0) return { state:"due-today", days:0,     nextDue:nextDue, cycle:cycle, label:"Due today" };
+
+  if(days < 0){
+    var lbl = payCount === 0 ? "Never paid — overdue by " : "Overdue by ";
+    return { state:"overdue", days:-days, nextDue:nextDue, cycle:cycle, label:lbl + (-days) + " day" + (-days===1?"":"s") };
+  }
+  if(days === 0){
+    return { state:"due-today", days:0, nextDue:nextDue, cycle:cycle, label: payCount === 0 ? "First payment due today" : "Due today" };
+  }
+  if(payCount === 0){
+    return { state:"upcoming", days:days, nextDue:nextDue, cycle:cycle, label:"First payment due in " + days + " day" + (days===1?"":"s") };
+  }
   return { state:"ok", days:days, nextDue:nextDue, cycle:cycle, label:"Paid — " + days + " day" + (days===1?"":"s") + " till next payment" };
 }
 function dueBadgeClass(st){
