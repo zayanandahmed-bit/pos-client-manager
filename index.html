@@ -245,6 +245,7 @@
           <div class="row" style="margin-top:16px;">
             <button class="btn secondary small" id="detailEditBtn">Edit Client</button>
             <button class="btn green small" id="detailLogPaymentBtn">Log Payment</button>
+            <button class="btn danger small" id="detailDeleteBtn">Delete Client</button>
             <button class="btn secondary small" id="detailCloseBtn">Close</button>
           </div>
 
@@ -288,11 +289,38 @@
             <h3 style="margin:0;">All Employees</h3>
             <span id="employeesSummary" style="font-size:13px;color:var(--muted);"></span>
           </div>
-          <table>
-            <thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Status</th><th>Clients Signed</th><th>Join Date</th><th></th></tr></thead>
-            <tbody id="employeesBody"></tbody>
-          </table>
+          <div class="grid grid-3" id="employeesCardGrid"></div>
           <div id="employeesEmpty" class="empty" style="display:none;">No employees added yet.</div>
+        </div>
+      </div>
+
+      <!-- EMPLOYEE DETAIL MODAL -->
+      <div class="modal-overlay" id="employeeDetailOverlay">
+        <div class="modal" style="width:520px;max-height:85vh;overflow-y:auto;">
+          <div class="flex-between">
+            <h3 style="margin:0;" id="empDetailName">Employee Name</h3>
+            <span id="empDetailStatusBadge"></span>
+          </div>
+          <div class="grid grid-2" style="margin-top:14px;font-size:13px;">
+            <div><label>Phone</label><div id="empDetailPhone">—</div></div>
+            <div><label>Role</label><div id="empDetailRole">—</div></div>
+            <div><label>Join Date</label><div id="empDetailJoinDate">—</div></div>
+            <div><label>Clients Signed</label><div id="empDetailClientCount">0</div></div>
+          </div>
+          <div style="margin-top:8px;font-size:13px;"><label>Notes</label><div id="empDetailNotes">—</div></div>
+
+          <div class="row" style="margin-top:16px;">
+            <button class="btn secondary small" id="empDetailEditBtn">Edit Employee</button>
+            <button class="btn danger small" id="empDetailDeleteBtn">Delete Employee</button>
+            <button class="btn secondary small" id="empDetailCloseBtn">Close</button>
+          </div>
+
+          <h3 style="margin:20px 0 10px;">Clients Signed</h3>
+          <table>
+            <thead><tr><th>Store</th><th>Status</th><th>Monthly Fee</th><th></th></tr></thead>
+            <tbody id="empDetailClientsBody"></tbody>
+          </table>
+          <div id="empDetailClientsEmpty" class="empty" style="display:none;">Hasn't signed any clients yet.</div>
         </div>
       </div>
 
@@ -645,6 +673,7 @@ var currentDetailClientId = null;
 function openClientDetail(id){
   var c = state.clients.find(function(x){ return x.id === id; });
   if(!c) return;
+  closeEmployeeDetail();
   currentDetailClientId = id;
 
   document.getElementById("detailStoreName").textContent = c.storeName;
@@ -690,6 +719,9 @@ document.getElementById("detailLogPaymentBtn").addEventListener("click", functio
   if(currentDetailClientId) jumpToLogPayment(currentDetailClientId);
   closeClientDetail();
 });
+document.getElementById("detailDeleteBtn").addEventListener("click", function(){
+  if(currentDetailClientId) deleteClient(currentDetailClientId);
+});
 
 // ================= EMPLOYEES =================
 function employeeName(id){
@@ -699,25 +731,23 @@ function employeeName(id){
 }
 
 function renderEmployees(){
-  var body = document.getElementById("employeesBody");
+  var grid = document.getElementById("employeesCardGrid");
   var empty = document.getElementById("employeesEmpty");
   var sorted = state.employees.slice().sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
   empty.style.display = sorted.length === 0 ? "block" : "none";
   document.getElementById("employeesSummary").textContent = sorted.length + " employee(s)";
 
-  body.innerHTML = sorted.map(function(e){
+  grid.innerHTML = sorted.map(function(e){
     var signedCount = state.clients.filter(function(c){ return c.employeeId === e.id; }).length;
     var badgeClass = e.status === "active" ? "ok" : "muted";
-    return "<tr>" +
-      "<td>" + escapeHtml(e.name) + "</td>" +
-      "<td>" + escapeHtml(e.phone||"—") + "</td>" +
-      "<td>" + escapeHtml(e.role||"—") + "</td>" +
-      "<td><span class='badge " + badgeClass + "'>" + escapeHtml(e.status) + "</span></td>" +
-      "<td>" + signedCount + "</td>" +
-      "<td>" + (e.joinDate||"—") + "</td>" +
-      "<td><button class='btn secondary small' onclick='CRM.editEmployee(\"" + e.id + "\")'>Edit</button> " +
-        "<button class='btn danger small' onclick='CRM.deleteEmployee(\"" + e.id + "\")'>Delete</button></td>" +
-    "</tr>";
+    return "<div class='client-card' onclick='CRM.openEmployeeDetail(\"" + e.id + "\")'>" +
+      "<div class='name'>" + escapeHtml(e.name) + "</div>" +
+      "<div style='font-size:12px;color:var(--muted);'>" + escapeHtml(e.role||"No role listed") + "</div>" +
+      "<div class='row2'>" +
+        "<span>" + signedCount + " client(s) signed</span>" +
+        "<span class='badge " + badgeClass + "'>" + escapeHtml(e.status) + "</span>" +
+      "</div>" +
+    "</div>";
   }).join("");
 }
 
@@ -766,6 +796,7 @@ document.getElementById("saveEmployeeBtn").addEventListener("click", function(){
 document.getElementById("cancelEditEmployeeBtn").addEventListener("click", resetEmployeeForm);
 
 function editEmployee(id){
+  closeEmployeeDetail();
   var e = state.employees.find(function(x){ return x.id === id; });
   if(!e) return;
   document.getElementById("employeeEditId").value = e.id;
@@ -784,10 +815,62 @@ function deleteEmployee(id){
   if(!confirm("Delete this employee? Clients they signed will show \"(deleted employee)\" unless you reassign them first.")) return;
   state.employees = state.employees.filter(function(x){ return x.id !== id; });
   saveEmployees();
+  closeEmployeeDetail();
   renderEmployees();
   renderDashboard();
   toast("Employee deleted.");
 }
+
+// ================= EMPLOYEE DETAIL MODAL =================
+var currentDetailEmployeeId = null;
+
+function openEmployeeDetail(id){
+  var e = state.employees.find(function(x){ return x.id === id; });
+  if(!e) return;
+  closeClientDetail();
+  currentDetailEmployeeId = id;
+
+  document.getElementById("empDetailName").textContent = e.name;
+  var badgeClass = e.status === "active" ? "ok" : "muted";
+  document.getElementById("empDetailStatusBadge").innerHTML = "<span class='badge " + badgeClass + "'>" + escapeHtml(e.status) + "</span>";
+  document.getElementById("empDetailPhone").textContent = e.phone || "—";
+  document.getElementById("empDetailRole").textContent = e.role || "—";
+  document.getElementById("empDetailJoinDate").textContent = e.joinDate || "—";
+  document.getElementById("empDetailNotes").textContent = e.notes || "—";
+
+  var signedClients = state.clients.filter(function(c){ return c.employeeId === id; })
+    .sort(function(a,b){ return (a.storeName||"").localeCompare(b.storeName||""); });
+  document.getElementById("empDetailClientCount").textContent = signedClients.length;
+
+  var tbody = document.getElementById("empDetailClientsBody");
+  var empty = document.getElementById("empDetailClientsEmpty");
+  empty.style.display = signedClients.length === 0 ? "block" : "none";
+  tbody.innerHTML = signedClients.map(function(c){
+    var badgeClass2 = c.status === "active" ? "ok" : (c.status === "paused" ? "low" : "out");
+    return "<tr>" +
+      "<td>" + escapeHtml(c.storeName) + "</td>" +
+      "<td><span class='badge " + badgeClass2 + "'>" + escapeHtml(c.status) + "</span></td>" +
+      "<td>" + money(c.monthlyFee) + "</td>" +
+      "<td><button class='btn secondary small' onclick='CRM.openClientDetail(\"" + c.id + "\")'>View</button></td>" +
+    "</tr>";
+  }).join("");
+
+  document.getElementById("employeeDetailOverlay").classList.add("show");
+}
+function closeEmployeeDetail(){
+  currentDetailEmployeeId = null;
+  document.getElementById("employeeDetailOverlay").classList.remove("show");
+}
+document.getElementById("empDetailCloseBtn").addEventListener("click", closeEmployeeDetail);
+document.getElementById("employeeDetailOverlay").addEventListener("click", function(e){
+  if(e.target === this) closeEmployeeDetail();
+});
+document.getElementById("empDetailEditBtn").addEventListener("click", function(){
+  if(currentDetailEmployeeId) editEmployee(currentDetailEmployeeId);
+});
+document.getElementById("empDetailDeleteBtn").addEventListener("click", function(){
+  if(currentDetailEmployeeId) deleteEmployee(currentDetailEmployeeId);
+});
 
 // ================= PAYMENTS =================
 function populatePaymentClientSelect(){
@@ -1007,7 +1090,8 @@ document.getElementById("cloudPullBtn").addEventListener("click", function(){
 // ================= EXPOSE FOR INLINE HANDLERS =================
 window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
-  editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail
+  editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail,
+  openEmployeeDetail: openEmployeeDetail
 };
 
 // ================= BOOT =================
