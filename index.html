@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Manager — POS Reseller Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root{
+    --sidebar-bg:#0f1420; --sidebar-text:#c7cdd9; --sidebar-active:#3b5bdb;
+    --bg:#f4f5f7; --card:#fff; --border:#e3e6ea; --text:#1f2937; --muted:#6b7280;
+    --blue:#3b5bdb; --green:#16a34a; --red:#dc2626; --amber:#d97706;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  #lockScreen{position:fixed;inset:0;background:var(--sidebar-bg);display:flex;align-items:center;justify-content:center;z-index:999;}
+  #lockScreen .box{background:#fff;border-radius:16px;padding:40px;width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  #lockScreen h1{margin:10px 0 4px;font-size:22px;}
+  #lockScreen p{color:var(--muted);font-size:14px;margin:0 0 20px;}
+  #lockScreen input{width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:16px;text-align:center;letter-spacing:2px;}
+  #lockScreen button{width:100%;margin-top:14px;padding:12px;border:none;border-radius:8px;background:var(--blue);color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
+  #lockError{color:var(--red);font-size:13px;margin-top:8px;height:16px;}
+
+  #app{display:flex;min-height:100vh;}
+  #sidebar{width:230px;background:var(--sidebar-bg);color:var(--sidebar-text);padding:20px 14px;flex-shrink:0;}
+  #sidebar .brand{display:flex;align-items:center;gap:10px;padding:0 8px 20px;font-weight:bold;color:#fff;font-size:16px;}
+  .nav-btn{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:none;color:var(--sidebar-text);padding:10px 12px;border-radius:8px;cursor:pointer;font-size:14px;text-align:left;margin-bottom:4px;}
+  .nav-btn:hover{background:rgba(255,255,255,.06);}
+  .nav-btn.active{background:var(--sidebar-active);color:#fff;font-weight:bold;}
+
+  #main{flex:1;min-width:0;}
+  header{background:#fff;border-bottom:1px solid var(--border);padding:16px 28px;display:flex;justify-content:space-between;align-items:center;}
+  header h2{margin:0;font-size:20px;}
+  header p{margin:2px 0 0;color:var(--muted);font-size:13px;}
+  #content{padding:24px 28px;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .grid{display:grid;gap:16px;}
+  .grid-2{grid-template-columns:1fr 1fr;}
+  .grid-3{grid-template-columns:1fr 1fr 1fr;}
+  .grid-4{grid-template-columns:repeat(4,1fr);}
+  @media(max-width:900px){.grid-4{grid-template-columns:repeat(2,1fr);} .grid-3{grid-template-columns:1fr 1fr;} .grid-2{grid-template-columns:1fr;}}
+
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;}
+  input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);}
+  .btn{padding:9px 16px;border:none;border-radius:8px;background:var(--blue);color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
+  .btn.secondary{background:#eef0f3;color:var(--text);}
+  .btn.green{background:var(--green);}
+  .btn.danger{background:var(--red);}
+  .btn.small{padding:6px 10px;font-size:12px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;padding:8px;border-bottom:1px solid var(--border);}
+  td{padding:10px 8px;border-bottom:1px solid var(--border);}
+  .empty{text-align:center;padding:24px;color:var(--muted);}
+
+  .stat-card{border-left:4px solid var(--blue);}
+  .stat-card .label{font-size:12px;color:var(--muted);}
+  .stat-card .value{font-size:26px;font-weight:bold;margin-top:4px;}
+
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+  .badge.ok{background:#dcfce7;color:#166534;}
+  .badge.low{background:#fef3c7;color:#92400e;}
+  .badge.out{background:#fee2e2;color:#991b1b;}
+  .badge.muted{background:#f0f0f2;color:#555;}
+
+  .chart-box{position:relative;height:280px;}
+  #toast{position:fixed;bottom:20px;right:20px;background:#1f2937;color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:1000;}
+  #toast.show{opacity:1;transform:translateY(0);}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:500;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;}
+</style>
+</head>
+<body>
+
+<div id="lockScreen">
+  <div class="box">
+    <div style="font-size:40px;">🔐</div>
+    <h1>Client Manager</h1>
+    <p>Enter the password to open your dashboard.</p>
+    <input type="password" id="lockPasswordInput" placeholder="Password" autocomplete="off">
+    <button id="lockUnlockBtn">Unlock</button>
+    <div id="lockError"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="sidebar">
+    <div class="brand">📊 Client Manager</div>
+    <button class="nav-btn active" data-view="dashboard">📈 Dashboard</button>
+    <button class="nav-btn" data-view="clients">🏬 Clients</button>
+    <button class="nav-btn" data-view="payments">💰 Payments</button>
+    <button class="nav-btn" data-view="settings">⚙️ Settings</button>
+  </div>
+
+  <div id="main">
+    <header>
+      <div>
+        <h2 id="viewTitle">Dashboard</h2>
+        <p id="viewSubtitle">Overview of your client base and revenue</p>
+      </div>
+      <div id="cloudStatus"></div>
+    </header>
+
+    <div id="content">
+
+      <!-- DASHBOARD -->
+      <div class="view active" id="view-dashboard">
+        <div class="grid grid-4">
+          <div class="panel stat-card" style="border-color:var(--blue);">
+            <div class="label">Monthly Recurring Revenue (MRR)</div>
+            <div class="value" id="statMRR">Rs 0</div>
+          </div>
+          <div class="panel stat-card" style="border-color:var(--green);">
+            <div class="label">Active Clients</div>
+            <div class="value" id="statActiveClients">0</div>
+          </div>
+          <div class="panel stat-card" style="border-color:var(--amber);">
+            <div class="label">Collected This Month</div>
+            <div class="value" id="statCollected">Rs 0</div>
+          </div>
+          <div class="panel stat-card" style="border-color:var(--red);">
+            <div class="label">Overdue This Month</div>
+            <div class="value" id="statOverdue">0</div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="panel">
+            <h3 style="margin-top:0;">Revenue — Last 12 Months</h3>
+            <div class="chart-box"><canvas id="revenueChart"></canvas></div>
+          </div>
+          <div class="panel">
+            <h3 style="margin-top:0;">Clients by Status</h3>
+            <div class="chart-box"><canvas id="statusChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="panel">
+            <h3 style="margin-top:0;">Payment Status This Month</h3>
+            <div class="chart-box"><canvas id="paymentStatusChart"></canvas></div>
+          </div>
+          <div class="panel">
+            <h3 style="margin-top:0;">Monthly Fee Distribution</h3>
+            <div class="chart-box"><canvas id="feeHistogram"></canvas></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="flex-between">
+            <h3 style="margin:0;">Clients Overdue This Month</h3>
+          </div>
+          <table>
+            <thead><tr><th>Store</th><th>Owner</th><th>Phone</th><th>Monthly Fee</th><th></th></tr></thead>
+            <tbody id="overdueBody"></tbody>
+          </table>
+          <div id="overdueEmpty" class="empty" style="display:none;">Nobody's overdue — nice.</div>
+        </div>
+      </div>
+
+      <!-- CLIENTS -->
+      <div class="view" id="view-clients">
+        <div class="panel">
+          <h3 style="margin-top:0;" id="clientFormTitle">Add New Client</h3>
+          <input type="hidden" id="clientEditId">
+          <div class="grid grid-3">
+            <div><label>Store Name *</label><input id="clientStoreName" placeholder="e.g. Hafiz Dairy"></div>
+            <div><label>Owner Name</label><input id="clientOwnerName" placeholder="e.g. Hafiz Rehman"></div>
+            <div><label>Phone</label><input id="clientPhone" placeholder="03xx-xxxxxxx"></div>
+          </div>
+          <div class="grid grid-3" style="margin-top:12px;">
+            <div><label>Monthly Fee (PKR) *</label><input type="number" id="clientFee" min="0" step="100" placeholder="18000"></div>
+            <div><label>Status</label>
+              <select id="clientStatus">
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div><label>Start Date</label><input type="date" id="clientStartDate"></div>
+          </div>
+          <div style="margin-top:12px;"><label>Address</label><input id="clientAddress" placeholder="Optional"></div>
+          <div style="margin-top:12px;"><label>Notes</label><input id="clientNotes" placeholder="Optional"></div>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn" id="saveClientBtn">Add Client</button>
+            <button class="btn secondary" id="cancelEditClientBtn" style="display:none;">Cancel Edit</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="flex-between">
+            <h3 style="margin:0;">All Clients</h3>
+            <span id="clientsSummary" style="font-size:13px;color:var(--muted);"></span>
+          </div>
+          <input id="clientSearch" placeholder="Search by store name, owner, or phone..." style="margin-bottom:12px;">
+          <table>
+            <thead><tr><th>Store</th><th>Owner</th><th>Phone</th><th>Monthly Fee</th><th>Status</th><th>Start Date</th><th></th></tr></thead>
+            <tbody id="clientsBody"></tbody>
+          </table>
+          <div id="clientsEmpty" class="empty" style="display:none;">No clients added yet.</div>
+        </div>
+      </div>
+
+      <!-- PAYMENTS -->
+      <div class="view" id="view-payments">
+        <div class="panel">
+          <h3 style="margin-top:0;">Log a Payment</h3>
+          <div class="grid grid-3">
+            <div><label>Client *</label><select id="paymentClient"></select></div>
+            <div><label>Period (month) *</label><input type="month" id="paymentPeriod"></div>
+            <div><label>Amount (PKR) *</label><input type="number" id="paymentAmount" min="0" step="100"></div>
+          </div>
+          <div class="grid grid-2" style="margin-top:12px;">
+            <div><label>Paid Date</label><input type="date" id="paymentDate"></div>
+            <div><label>Method</label>
+              <select id="paymentMethod">
+                <option>Bank Transfer</option>
+                <option>Cash</option>
+                <option>JazzCash</option>
+                <option>EasyPaisa</option>
+                <option>Other</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:12px;"><label>Notes</label><input id="paymentNotes" placeholder="Optional"></div>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn green" id="savePaymentBtn">Log Payment</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="flex-between">
+            <h3 style="margin:0;">Payment History</h3>
+            <span id="paymentsSummary" style="font-size:13px;color:var(--muted);"></span>
+          </div>
+          <input id="paymentSearch" placeholder="Search by store name or period (e.g. 2026-07)..." style="margin-bottom:12px;">
+          <table>
+            <thead><tr><th>Store</th><th>Period</th><th>Amount</th><th>Paid Date</th><th>Method</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="paymentsBody"></tbody>
+          </table>
+          <div id="paymentsEmpty" class="empty" style="display:none;">No payments logged yet.</div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="view" id="view-settings">
+        <div class="panel">
+          <h3 style="margin-top:0;">Cloud Sync (Supabase)</h3>
+          <p style="color:var(--muted);font-size:13px;">Uses the SAME Supabase project as your POS app — just new tables (crm_clients, crm_payments). See supabase-schema.sql.</p>
+          <div class="grid grid-2">
+            <div><label>Supabase Project URL</label><input id="setCloudUrl" placeholder="https://xxxxxxxx.supabase.co"></div>
+            <div><label>Supabase Anon Key</label><input id="setCloudSecret" placeholder="the anon public key"></div>
+          </div>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn secondary" id="cloudSaveBtn">Save Cloud Settings</button>
+            <button class="btn secondary" id="cloudPullBtn">Pull Latest From Cloud</button>
+          </div>
+          <p class="hint" id="cloudLastSync" style="margin-top:8px;font-size:12px;color:var(--muted);"></p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+// ================= PASSWORD GATE =================
+// UI deterrent only, not real security — same tradeoff as the POS app.
+var LOCK_PASSWORD = "clientmanager2026";
+var lockScreen = document.getElementById("lockScreen");
+document.getElementById("lockUnlockBtn").addEventListener("click", tryUnlock);
+document.getElementById("lockPasswordInput").addEventListener("keydown", function(e){ if(e.key === "Enter") tryUnlock(); });
+function tryUnlock(){
+  var val = document.getElementById("lockPasswordInput").value;
+  if(val === LOCK_PASSWORD){ lockScreen.style.display = "none"; }
+  else {
+    document.getElementById("lockError").textContent = "Incorrect password.";
+    document.getElementById("lockPasswordInput").value = "";
+  }
+}
+
+// ================= STATE =================
+var BUILT_IN_SUPABASE_URL = "https://ajevxwdgmpaakjkffvmf.supabase.co";
+var BUILT_IN_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqZXZ4d2RnbXBhYWtqa2Zmdm1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNjE5NzIsImV4cCI6MjEwMDYzNzk3Mn0.bB97bHOFgCeMUTYUraOArzvXAkFRHxiajrCg3gwCGrc";
+
+var state = {
+  clients: [],
+  payments: [],
+  cloud: { url: BUILT_IN_SUPABASE_URL, secret: BUILT_IN_SUPABASE_ANON_KEY, enabled: true, lastSync: null }
+};
+
+var LOCAL_STORAGE_KEY = "crmDashboard_localState_v1";
+function saveLocalState(){
+  try{ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ clients: state.clients, payments: state.payments })); }catch(e){}
+}
+function loadLocalState(){
+  try{
+    var raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if(!raw) return false;
+    var data = JSON.parse(raw);
+    if(data.clients) state.clients = data.clients;
+    if(data.payments) state.payments = data.payments;
+    return true;
+  }catch(e){ return false; }
+}
+
+var DIRTY_KEY = "crmDashboard_dirty_v1";
+var dirty = {};
+(function(){ try{ dirty = JSON.parse(localStorage.getItem(DIRTY_KEY) || "{}"); }catch(e){ dirty = {}; } })();
+function saveDirty(){ try{ localStorage.setItem(DIRTY_KEY, JSON.stringify(dirty)); }catch(e){} }
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function money(n){ return "Rs " + (Number(n)||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
+function escapeHtml(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+function toast(msg){
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function(){ el.classList.remove("show"); }, 2600);
+}
+
+// ================= CLOUD SYNC =================
+function cloudReady(){ return !!(state.cloud.enabled && state.cloud.url && state.cloud.secret); }
+function supabaseUrl(fn){ return state.cloud.url.replace(/\/+$/, "") + "/rest/v1/rpc/" + fn; }
+function supabaseHeaders(){
+  return { "Content-Type": "application/json", "apikey": state.cloud.secret, "Authorization": "Bearer " + state.cloud.secret };
+}
+function setCloudStatus(kind, detail){
+  var el = document.getElementById("cloudStatus");
+  if(kind === "syncing") el.innerHTML = '<span style="color:var(--muted);font-size:12px;">Syncing…</span>';
+  else if(kind === "synced") el.innerHTML = '<span style="color:var(--green);font-size:12px;">Synced ' + new Date().toLocaleTimeString() + '</span>';
+  else if(kind === "error") el.innerHTML = '<span style="color:var(--red);font-size:12px;">Sync error' + (detail ? ": " + escapeHtml(detail) : "") + '</span>';
+  else el.innerHTML = "";
+}
+
+var domainTimers = {};
+var domainInFlight = {};
+var DOMAIN_RPC = { clients: "sync_replace_crm_clients", payments: "sync_replace_crm_payments" };
+
+function pushDomainInstant(domain){
+  dirty[domain] = true;
+  saveDirty();
+  clearTimeout(domainTimers[domain]);
+  domainTimers[domain] = setTimeout(function(){ flushDomain(domain); }, 400);
+}
+function flushDomain(domain){
+  if(!cloudReady() || !dirty[domain] || domainInFlight[domain]) return;
+  domainInFlight[domain] = true;
+  setCloudStatus("syncing");
+  var body = {};
+  body[domain] = state[domain];
+  fetch(supabaseUrl(DOMAIN_RPC[domain]), { method: "POST", headers: supabaseHeaders(), body: JSON.stringify(body) })
+    .then(function(r){
+      if(!r.ok) return r.text().then(function(t){ throw new Error(t || ("HTTP " + r.status)); });
+      delete dirty[domain];
+      saveDirty();
+      setCloudStatus("synced");
+    })
+    .catch(function(err){ setCloudStatus("error", err.message || "offline"); })
+    .finally(function(){ domainInFlight[domain] = false; });
+}
+function flushAllDirty(){ Object.keys(dirty).forEach(flushDomain); }
+window.addEventListener("online", flushAllDirty);
+setInterval(flushAllDirty, 20000);
+
+function cloudPullAll(){
+  if(!cloudReady()) return Promise.reject(new Error("Cloud Sync isn't configured yet."));
+  setCloudStatus("syncing");
+  return fetch(supabaseUrl("sync_pull_crm"), { method: "POST", headers: supabaseHeaders(), body: "{}" })
+    .then(function(r){
+      if(!r.ok) return r.text().then(function(t){ throw new Error(t || ("HTTP " + r.status)); });
+      return r.json();
+    })
+    .then(function(data){ state.cloud.lastSync = new Date().toISOString(); setCloudStatus("synced"); return data || {}; })
+    .catch(function(err){ setCloudStatus("error", err.message); throw err; });
+}
+function applyCloudData(data){
+  if(data.clients) state.clients = data.clients;
+  if(data.payments) state.payments = data.payments;
+}
+
+function saveClients(){ saveLocalState(); pushDomainInstant("clients"); }
+function savePayments(){ saveLocalState(); pushDomainInstant("payments"); }
+
+// ================= NAV =================
+var VIEW_META = {
+  dashboard: { title: "Dashboard", sub: "Overview of your client base and revenue" },
+  clients: { title: "Clients", sub: "Add, edit, and manage your client stores" },
+  payments: { title: "Payments", sub: "Log and browse client payment history" },
+  settings: { title: "Settings", sub: "Cloud sync configuration" }
+};
+document.querySelectorAll(".nav-btn").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    document.querySelectorAll(".nav-btn").forEach(function(b){ b.classList.remove("active"); });
+    btn.classList.add("active");
+    document.querySelectorAll(".view").forEach(function(v){ v.classList.remove("active"); });
+    document.getElementById("view-" + btn.dataset.view).classList.add("active");
+    var meta = VIEW_META[btn.dataset.view];
+    document.getElementById("viewTitle").textContent = meta.title;
+    document.getElementById("viewSubtitle").textContent = meta.sub;
+    if(btn.dataset.view === "dashboard") renderDashboard();
+    if(btn.dataset.view === "clients") renderClients();
+    if(btn.dataset.view === "payments"){ populatePaymentClientSelect(); renderPayments(); }
+    if(btn.dataset.view === "settings") loadSettingsForm();
+  });
+});
+
+// ================= CLIENTS =================
+function renderClients(){
+  var body = document.getElementById("clientsBody");
+  var empty = document.getElementById("clientsEmpty");
+  var q = document.getElementById("clientSearch").value.trim().toLowerCase();
+  var filtered = state.clients.filter(function(c){
+    if(!q) return true;
+    return (c.storeName||"").toLowerCase().indexOf(q) !== -1 ||
+           (c.ownerName||"").toLowerCase().indexOf(q) !== -1 ||
+           (c.phone||"").toLowerCase().indexOf(q) !== -1;
+  });
+  var sorted = filtered.slice().sort(function(a,b){ return (a.storeName||"").localeCompare(b.storeName||""); });
+  empty.style.display = sorted.length === 0 ? "block" : "none";
+  document.getElementById("clientsSummary").textContent = sorted.length + " client(s) shown (of " + state.clients.length + " total)";
+
+  body.innerHTML = sorted.map(function(c){
+    var badgeClass = c.status === "active" ? "ok" : (c.status === "paused" ? "low" : "out");
+    return "<tr>" +
+      "<td>" + escapeHtml(c.storeName) + "</td>" +
+      "<td>" + escapeHtml(c.ownerName||"—") + "</td>" +
+      "<td>" + escapeHtml(c.phone||"—") + "</td>" +
+      "<td>" + money(c.monthlyFee) + "</td>" +
+      "<td><span class='badge " + badgeClass + "'>" + escapeHtml(c.status) + "</span></td>" +
+      "<td>" + (c.startDate||"—") + "</td>" +
+      "<td><button class='btn secondary small' onclick='CRM.editClient(\"" + c.id + "\")'>Edit</button> " +
+        "<button class='btn danger small' onclick='CRM.deleteClient(\"" + c.id + "\")'>Delete</button></td>" +
+    "</tr>";
+  }).join("");
+}
+document.getElementById("clientSearch").addEventListener("input", renderClients);
+
+function resetClientForm(){
+  document.getElementById("clientEditId").value = "";
+  document.getElementById("clientStoreName").value = "";
+  document.getElementById("clientOwnerName").value = "";
+  document.getElementById("clientPhone").value = "";
+  document.getElementById("clientFee").value = "";
+  document.getElementById("clientStatus").value = "active";
+  document.getElementById("clientStartDate").value = new Date().toISOString().slice(0,10);
+  document.getElementById("clientAddress").value = "";
+  document.getElementById("clientNotes").value = "";
+  document.getElementById("clientFormTitle").textContent = "Add New Client";
+  document.getElementById("saveClientBtn").textContent = "Add Client";
+  document.getElementById("cancelEditClientBtn").style.display = "none";
+}
+resetClientForm();
+
+document.getElementById("saveClientBtn").addEventListener("click", function(){
+  var storeName = document.getElementById("clientStoreName").value.trim();
+  var fee = parseFloat(document.getElementById("clientFee").value);
+  if(!storeName){ toast("Store name is required."); return; }
+  if(isNaN(fee) || fee < 0){ toast("Enter a valid monthly fee."); return; }
+
+  var editId = document.getElementById("clientEditId").value;
+  var payload = {
+    storeName: storeName,
+    ownerName: document.getElementById("clientOwnerName").value.trim(),
+    phone: document.getElementById("clientPhone").value.trim(),
+    address: document.getElementById("clientAddress").value.trim(),
+    monthlyFee: fee,
+    status: document.getElementById("clientStatus").value,
+    startDate: document.getElementById("clientStartDate").value,
+    notes: document.getElementById("clientNotes").value.trim()
+  };
+
+  if(editId){
+    var existing = state.clients.find(function(c){ return c.id === editId; });
+    if(existing) Object.assign(existing, payload);
+    toast("Client updated.");
+  } else {
+    payload.id = uid();
+    state.clients.push(payload);
+    toast("Client added.");
+  }
+  saveClients();
+  resetClientForm();
+  renderClients();
+  renderDashboard();
+});
+document.getElementById("cancelEditClientBtn").addEventListener("click", resetClientForm);
+
+function editClient(id){
+  var c = state.clients.find(function(x){ return x.id === id; });
+  if(!c) return;
+  document.getElementById("clientEditId").value = c.id;
+  document.getElementById("clientStoreName").value = c.storeName || "";
+  document.getElementById("clientOwnerName").value = c.ownerName || "";
+  document.getElementById("clientPhone").value = c.phone || "";
+  document.getElementById("clientFee").value = c.monthlyFee || 0;
+  document.getElementById("clientStatus").value = c.status || "active";
+  document.getElementById("clientStartDate").value = c.startDate || "";
+  document.getElementById("clientAddress").value = c.address || "";
+  document.getElementById("clientNotes").value = c.notes || "";
+  document.getElementById("clientFormTitle").textContent = "Edit Client";
+  document.getElementById("saveClientBtn").textContent = "Save Changes";
+  document.getElementById("cancelEditClientBtn").style.display = "inline-block";
+  document.querySelector('.nav-btn[data-view="clients"]').scrollIntoView();
+  window.scrollTo(0,0);
+}
+function deleteClient(id){
+  if(!confirm("Delete this client? Their payment history will be kept but unlinked.")) return;
+  state.clients = state.clients.filter(function(c){ return c.id !== id; });
+  saveClients();
+  renderClients();
+  renderDashboard();
+  toast("Client deleted.");
+}
+
+// ================= PAYMENTS =================
+function populatePaymentClientSelect(){
+  var sel = document.getElementById("paymentClient");
+  var current = sel.value;
+  sel.innerHTML = state.clients.slice().sort(function(a,b){ return (a.storeName||"").localeCompare(b.storeName||""); })
+    .map(function(c){ return "<option value='" + c.id + "'>" + escapeHtml(c.storeName) + "</option>"; }).join("");
+  if(current) sel.value = current;
+  if(!document.getElementById("paymentPeriod").value){
+    var now = new Date();
+    document.getElementById("paymentPeriod").value = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+  }
+  if(!document.getElementById("paymentDate").value){
+    document.getElementById("paymentDate").value = new Date().toISOString().slice(0,10);
+  }
+}
+
+function clientName(id){
+  var c = state.clients.find(function(x){ return x.id === id; });
+  return c ? c.storeName : "(deleted client)";
+}
+
+function renderPayments(){
+  var body = document.getElementById("paymentsBody");
+  var empty = document.getElementById("paymentsEmpty");
+  var q = document.getElementById("paymentSearch").value.trim().toLowerCase();
+  var filtered = state.payments.filter(function(p){
+    if(!q) return true;
+    return clientName(p.clientId).toLowerCase().indexOf(q) !== -1 || (p.period||"").indexOf(q) !== -1;
+  });
+  var sorted = filtered.slice().sort(function(a,b){ return (b.period||"").localeCompare(a.period||"") || (b.paidDate||"").localeCompare(a.paidDate||""); });
+  empty.style.display = sorted.length === 0 ? "block" : "none";
+  var total = filtered.reduce(function(s,p){ return s+(p.amount||0); }, 0);
+  document.getElementById("paymentsSummary").textContent = sorted.length + " payment(s) shown · Total: " + money(total);
+
+  body.innerHTML = sorted.map(function(p){
+    return "<tr>" +
+      "<td>" + escapeHtml(clientName(p.clientId)) + "</td>" +
+      "<td>" + escapeHtml(p.period) + "</td>" +
+      "<td>" + money(p.amount) + "</td>" +
+      "<td>" + (p.paidDate||"—") + "</td>" +
+      "<td>" + escapeHtml(p.method||"—") + "</td>" +
+      "<td>" + escapeHtml(p.notes||"") + "</td>" +
+      "<td><button class='btn danger small' onclick='CRM.deletePayment(\"" + p.id + "\")'>Delete</button></td>" +
+    "</tr>";
+  }).join("");
+}
+document.getElementById("paymentSearch").addEventListener("input", renderPayments);
+
+document.getElementById("savePaymentBtn").addEventListener("click", function(){
+  var clientId = document.getElementById("paymentClient").value;
+  var period = document.getElementById("paymentPeriod").value;
+  var amount = parseFloat(document.getElementById("paymentAmount").value);
+  if(!clientId){ toast("Add a client first."); return; }
+  if(!period){ toast("Pick which month this payment covers."); return; }
+  if(isNaN(amount) || amount <= 0){ toast("Enter a valid amount."); return; }
+
+  state.payments.push({
+    id: uid(), clientId: clientId, period: period, amount: amount,
+    paidDate: document.getElementById("paymentDate").value,
+    method: document.getElementById("paymentMethod").value,
+    notes: document.getElementById("paymentNotes").value.trim()
+  });
+  savePayments();
+  document.getElementById("paymentAmount").value = "";
+  document.getElementById("paymentNotes").value = "";
+  renderPayments();
+  renderDashboard();
+  toast("Payment logged.");
+});
+
+function deletePayment(id){
+  if(!confirm("Delete this payment record?")) return;
+  state.payments = state.payments.filter(function(p){ return p.id !== id; });
+  savePayments();
+  renderPayments();
+  renderDashboard();
+  toast("Payment deleted.");
+}
+
+// ================= DASHBOARD =================
+var charts = {};
+function upsertChart(key, canvasId, config){
+  if(charts[key]) charts[key].destroy();
+  charts[key] = new Chart(document.getElementById(canvasId).getContext("2d"), config);
+}
+
+function currentPeriodStr(){
+  var now = new Date();
+  return now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+}
+function lastNPeriods(n){
+  var periods = [];
+  var now = new Date();
+  for(var i=n-1;i>=0;i--){
+    var d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    periods.push(d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"));
+  }
+  return periods;
+}
+
+function renderDashboard(){
+  var activeClients = state.clients.filter(function(c){ return c.status === "active"; });
+  var mrr = activeClients.reduce(function(s,c){ return s+(c.monthlyFee||0); }, 0);
+  document.getElementById("statMRR").textContent = money(mrr);
+  document.getElementById("statActiveClients").textContent = activeClients.length;
+
+  var period = currentPeriodStr();
+  var thisMonthPayments = state.payments.filter(function(p){ return p.period === period; });
+  var collected = thisMonthPayments.reduce(function(s,p){ return s+(p.amount||0); }, 0);
+  document.getElementById("statCollected").textContent = money(collected);
+
+  var paidClientIds = {};
+  thisMonthPayments.forEach(function(p){ paidClientIds[p.clientId] = true; });
+  var overdue = activeClients.filter(function(c){ return !paidClientIds[c.id]; });
+  document.getElementById("statOverdue").textContent = overdue.length;
+
+  var overdueBody = document.getElementById("overdueBody");
+  document.getElementById("overdueEmpty").style.display = overdue.length === 0 ? "block" : "none";
+  overdueBody.innerHTML = overdue.map(function(c){
+    return "<tr><td>" + escapeHtml(c.storeName) + "</td><td>" + escapeHtml(c.ownerName||"—") + "</td><td>" +
+      escapeHtml(c.phone||"—") + "</td><td>" + money(c.monthlyFee) + "</td>" +
+      "<td><button class='btn green small' onclick='CRM.jumpToLogPayment(\"" + c.id + "\")'>Log Payment</button></td></tr>";
+  }).join("");
+
+  // Revenue last 12 months
+  var periods = lastNPeriods(12);
+  var revByPeriod = periods.map(function(p){
+    return state.payments.filter(function(x){ return x.period === p; }).reduce(function(s,x){ return s+(x.amount||0); }, 0);
+  });
+  upsertChart("revenue", "revenueChart", {
+    type: "bar",
+    data: { labels: periods, datasets: [{ label: "Revenue", data: revByPeriod, backgroundColor: "#3b5bdb" }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true } } }
+  });
+
+  // Clients by status
+  var statusCounts = { active:0, paused:0, cancelled:0 };
+  state.clients.forEach(function(c){ statusCounts[c.status] = (statusCounts[c.status]||0)+1; });
+  upsertChart("status", "statusChart", {
+    type: "doughnut",
+    data: {
+      labels: ["Active","Paused","Cancelled"],
+      datasets: [{ data: [statusCounts.active, statusCounts.paused, statusCounts.cancelled], backgroundColor: ["#16a34a","#d97706","#dc2626"] }]
+    },
+    options: { responsive:true, maintainAspectRatio:false }
+  });
+
+  // Payment status this month
+  upsertChart("paymentStatus", "paymentStatusChart", {
+    type: "bar",
+    data: {
+      labels: ["Paid","Overdue"],
+      datasets: [{ data: [activeClients.length - overdue.length, overdue.length], backgroundColor: ["#16a34a","#dc2626"] }]
+    },
+    options: { indexAxis:"y", responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ beginAtZero:true, ticks:{ precision:0 } } } }
+  });
+
+  // Monthly fee distribution (histogram-style buckets)
+  var buckets = [
+    {label:"< 10k", min:0, max:10000},
+    {label:"10k-15k", min:10000, max:15000},
+    {label:"15k-20k", min:15000, max:20000},
+    {label:"20k-30k", min:20000, max:30000},
+    {label:"30k+", min:30000, max:Infinity}
+  ];
+  var bucketCounts = buckets.map(function(b){
+    return state.clients.filter(function(c){ return (c.monthlyFee||0) >= b.min && (c.monthlyFee||0) < b.max; }).length;
+  });
+  upsertChart("feeHist", "feeHistogram", {
+    type: "bar",
+    data: { labels: buckets.map(function(b){ return b.label; }), datasets: [{ data: bucketCounts, backgroundColor: "#6366f1" }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } }
+  });
+}
+
+function jumpToLogPayment(clientId){
+  document.querySelector('.nav-btn[data-view="payments"]').click();
+  populatePaymentClientSelect();
+  document.getElementById("paymentClient").value = clientId;
+  window.scrollTo(0,0);
+}
+
+// ================= SETTINGS =================
+function loadSettingsForm(){
+  document.getElementById("setCloudUrl").value = state.cloud.url || "";
+  document.getElementById("setCloudSecret").value = state.cloud.secret || "";
+  document.getElementById("cloudLastSync").textContent = state.cloud.lastSync ? "Last synced: " + new Date(state.cloud.lastSync).toLocaleString() : "";
+}
+document.getElementById("cloudSaveBtn").addEventListener("click", function(){
+  state.cloud.url = document.getElementById("setCloudUrl").value.trim();
+  state.cloud.secret = document.getElementById("setCloudSecret").value.trim();
+  toast("Cloud settings saved.");
+});
+document.getElementById("cloudPullBtn").addEventListener("click", function(){
+  if(!confirm("This replaces everything on this device with what's in the cloud. Continue?")) return;
+  cloudPullAll().then(function(data){
+    applyCloudData(data);
+    saveLocalState();
+    renderClients(); renderPayments(); renderDashboard();
+    toast("Pulled latest from cloud.");
+  }).catch(function(err){ toast("Pull failed: " + err.message); });
+});
+
+// ================= EXPOSE FOR INLINE HANDLERS =================
+window.CRM = { editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment };
+
+// ================= BOOT =================
+var hadLocalData = loadLocalState();
+flushAllDirty();
+if(cloudReady()){
+  cloudPullAll().then(function(data){
+    Object.keys(data).forEach(function(k){
+      if(dirty[k]) return; // don't clobber an unconfirmed local edit
+      if(k === "clients") state.clients = data.clients;
+      if(k === "payments") state.payments = data.payments;
+    });
+    renderClients(); renderPayments(); renderDashboard();
+    if(!hadLocalData) toast("Synced with cloud.");
+  }).catch(function(err){
+    toast("Couldn't reach the database — check your internet connection.");
+  });
+}
+renderClients();
+populatePaymentClientSelect();
+renderPayments();
+renderDashboard();
+
+})();
+</script>
+</body>
+</html>
