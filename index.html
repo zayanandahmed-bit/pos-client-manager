@@ -715,25 +715,42 @@ function balanceInfo(c){
   }
 
   var todayKey = monthKey(today);
-  var duePeriods = {};
-  calendarPeriodsSoFar(start, today).forEach(function(k){ duePeriods[k] = true; });
-  state.payments.filter(function(p){ return p.clientId === c.id && p.period && p.period <= todayKey; })
-    .forEach(function(p){ duePeriods[p.period] = true; });
-  var periods = Object.keys(duePeriods).sort();
+  var sumsByPeriod = {};
+  state.payments.filter(function(p){ return p.clientId === c.id; }).forEach(function(p){
+    var key = p.period || "";
+    sumsByPeriod[key] = (sumsByPeriod[key]||0) + (p.amount||0);
+  });
 
-  var totalPaid = state.payments.filter(function(p){ return p.clientId === c.id; })
-    .reduce(function(s,p){ return s + (p.amount||0); }, 0);
-  var expected = periods.length * fee;
+  // "Due so far" (for the owed/shortfall figure): the calendar grid from
+  // signup through this month, plus any period actually paid against, but
+  // capped at today's month — being paid ahead for a FUTURE month isn't a
+  // shortfall concern, so it's excluded here and handled by nextDue below.
+  var duePeriodsSet = {};
+  calendarPeriodsSoFar(start, today).forEach(function(k){ duePeriodsSet[k] = true; });
+  Object.keys(sumsByPeriod).forEach(function(k){ if(k && k <= todayKey) duePeriodsSet[k] = true; });
+  var duePeriods = Object.keys(duePeriodsSet).sort();
+  var expected = duePeriods.length * fee;
+  var totalPaidDue = duePeriods.reduce(function(s,k){ return s + (sumsByPeriod[k]||0); }, 0);
 
-  var nextDue;
-  if(periods.length){
-    var lastParts = periods[periods.length-1].split("-");
-    var lastBase = new Date(+lastParts[0], +lastParts[1]-1, start.getDate());
-    nextDue = addMonths(lastBase, 1);
-  } else {
-    nextDue = start;
+  // Next due date: walk the calendar grid from signup one month at a time
+  // and stop at the first month that isn't fully paid yet — this way,
+  // paying several months ahead correctly pushes the due date forward
+  // instead of getting stuck one cycle past signup.
+  var paidKeys = Object.keys(sumsByPeriod).filter(function(k){ return k; });
+  var maxPaidPeriod = paidKeys.length ? paidKeys.sort().pop() : null;
+  var scanEndKey = (maxPaidPeriod && maxPaidPeriod > todayKey) ? maxPaidPeriod : todayKey;
+  var scanEndParts = scanEndKey.split("-");
+  var scanEnd = new Date(+scanEndParts[0], +scanEndParts[1]-1, 1);
+  var cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  var nextDue = null;
+  while(true){
+    var key = monthKey(cursor);
+    if((sumsByPeriod[key]||0) < fee){ nextDue = new Date(cursor.getFullYear(), cursor.getMonth(), start.getDate()); break; }
+    if(cursor >= scanEnd){ nextDue = addMonths(new Date(cursor.getFullYear(), cursor.getMonth(), start.getDate()), 1); break; }
+    cursor = addMonths(cursor, 1);
   }
-  return { owed: expected - totalPaid, expected:expected, totalPaid:totalPaid, cycles:periods.length, nextDue:nextDue };
+
+  return { owed: expected - totalPaidDue, expected:expected, totalPaid:totalPaidDue, cycles:duePeriods.length, nextDue:nextDue };
 }
 
 // Returns { state, days, nextDue, label, cycle, owed } where state is one of:
@@ -752,11 +769,14 @@ function dueInfo(c){
   var daysToNext = Math.round((midnight(bal.nextDue) - today) / 86400000);
 
   if(bal.owed > 0){
-    var lastDue = addCycles(bal.nextDue, -1, cycle);
+    // Weekly's nextDue always points to the next FUTURE cycle boundary, so
+    // the actually-missed date is one cycle earlier. Monthly's nextDue (see
+    // balanceInfo) already IS the missed date directly.
+    var lastDue = cycle === "weekly" ? addCycles(bal.nextDue, -1, cycle) : bal.nextDue;
     var daysLate = Math.round((today - midnight(lastDue)) / 86400000);
     var lbl = (bal.totalPaid === 0 ? "Never paid — " : "Overdue — ") + money(bal.owed) + " short";
     if(daysLate > 0) lbl += " (" + daysLate + " day" + (daysLate===1?"":"s") + " late)";
-    return { state:"overdue", days:daysLate, nextDue:bal.nextDue, cycle:cycle, label:lbl, owed:bal.owed };
+    return { state:"overdue", days:daysLate, nextDue:lastDue, cycle:cycle, label:lbl, owed:bal.owed };
   }
   if(daysToNext === 0){
     return { state:"due-today", days:0, nextDue:bal.nextDue, cycle:cycle, label: bal.cycles === 0 ? "First payment due today" : "Due today" };
