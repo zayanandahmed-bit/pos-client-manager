@@ -68,6 +68,11 @@
   .badge.out{background:#fee2e2;color:#991b1b;}
   .badge.muted{background:#f0f0f2;color:#555;}
 
+  .client-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:.15s;}
+  .client-card:hover{border-color:var(--blue);box-shadow:0 2px 10px rgba(59,91,219,.12);}
+  .client-card .name{font-weight:600;font-size:15px;margin-bottom:6px;}
+  .client-card .row2{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-top:8px;}
+
   .chart-box{position:relative;height:280px;}
   #toast{position:fixed;bottom:20px;right:20px;background:#1f2937;color:#fff;padding:12px 18px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none;z-index:1000;}
   #toast.show{opacity:1;transform:translateY(0);}
@@ -196,6 +201,10 @@
             <div><label>Signed By (Employee)</label><select id="clientEmployee"><option value="">— none —</option></select></div>
             <div><label>Address</label><input id="clientAddress" placeholder="Optional"></div>
           </div>
+          <div class="grid grid-2" style="margin-top:12px;">
+            <div><label>Web App URL</label><input id="clientWebAppUrl" placeholder="https://zayanandahmed-bit.github.io/their-pos"></div>
+            <div><label>Web App Password</label><input id="clientWebAppPassword" placeholder="Their POS app-open password"></div>
+          </div>
           <div style="margin-top:12px;"><label>Notes</label><input id="clientNotes" placeholder="Optional"></div>
           <div class="row" style="margin-top:14px;">
             <button class="btn" id="saveClientBtn">Add Client</button>
@@ -209,11 +218,42 @@
             <span id="clientsSummary" style="font-size:13px;color:var(--muted);"></span>
           </div>
           <input id="clientSearch" placeholder="Search by store name, owner, or phone..." style="margin-bottom:12px;">
-          <table>
-            <thead><tr><th>Store</th><th>Owner</th><th>Phone</th><th>Monthly Fee</th><th>Status</th><th>Signed By</th><th>Start Date</th><th></th></tr></thead>
-            <tbody id="clientsBody"></tbody>
-          </table>
+          <div class="grid grid-3" id="clientsCardGrid"></div>
           <div id="clientsEmpty" class="empty" style="display:none;">No clients added yet.</div>
+        </div>
+      </div>
+
+      <!-- CLIENT DETAIL MODAL -->
+      <div class="modal-overlay" id="clientDetailOverlay">
+        <div class="modal" style="width:560px;max-height:85vh;overflow-y:auto;">
+          <div class="flex-between">
+            <h3 style="margin:0;" id="detailStoreName">Store Name</h3>
+            <span id="detailStatusBadge"></span>
+          </div>
+          <div class="grid grid-2" style="margin-top:14px;font-size:13px;">
+            <div><label>Owner</label><div id="detailOwner">—</div></div>
+            <div><label>Phone</label><div id="detailPhone">—</div></div>
+            <div><label>Monthly Fee</label><div id="detailFee">—</div></div>
+            <div><label>Start Date</label><div id="detailStartDate">—</div></div>
+            <div><label>Signed By</label><div id="detailEmployee">—</div></div>
+            <div><label>Address</label><div id="detailAddress">—</div></div>
+          </div>
+          <div style="margin-top:12px;font-size:13px;"><label>Web App</label><div id="detailWebAppUrl">—</div></div>
+          <div style="margin-top:8px;font-size:13px;"><label>Web App Password</label><div id="detailWebAppPassword">—</div></div>
+          <div style="margin-top:8px;font-size:13px;"><label>Notes</label><div id="detailNotes">—</div></div>
+
+          <div class="row" style="margin-top:16px;">
+            <button class="btn secondary small" id="detailEditBtn">Edit Client</button>
+            <button class="btn green small" id="detailLogPaymentBtn">Log Payment</button>
+            <button class="btn secondary small" id="detailCloseBtn">Close</button>
+          </div>
+
+          <h3 style="margin:20px 0 10px;">Payment History</h3>
+          <table>
+            <thead><tr><th>Period</th><th>Amount</th><th>Paid Date</th><th>Method</th></tr></thead>
+            <tbody id="detailPaymentsBody"></tbody>
+          </table>
+          <div id="detailPaymentsEmpty" class="empty" style="display:none;">No payments logged for this client yet.</div>
         </div>
       </div>
 
@@ -475,7 +515,7 @@ document.querySelectorAll(".nav-btn").forEach(function(btn){
 
 // ================= CLIENTS =================
 function renderClients(){
-  var body = document.getElementById("clientsBody");
+  var grid = document.getElementById("clientsCardGrid");
   var empty = document.getElementById("clientsEmpty");
   var q = document.getElementById("clientSearch").value.trim().toLowerCase();
   var filtered = state.clients.filter(function(c){
@@ -488,19 +528,16 @@ function renderClients(){
   empty.style.display = sorted.length === 0 ? "block" : "none";
   document.getElementById("clientsSummary").textContent = sorted.length + " client(s) shown (of " + state.clients.length + " total)";
 
-  body.innerHTML = sorted.map(function(c){
+  grid.innerHTML = sorted.map(function(c){
     var badgeClass = c.status === "active" ? "ok" : (c.status === "paused" ? "low" : "out");
-    return "<tr>" +
-      "<td>" + escapeHtml(c.storeName) + "</td>" +
-      "<td>" + escapeHtml(c.ownerName||"—") + "</td>" +
-      "<td>" + escapeHtml(c.phone||"—") + "</td>" +
-      "<td>" + money(c.monthlyFee) + "</td>" +
-      "<td><span class='badge " + badgeClass + "'>" + escapeHtml(c.status) + "</span></td>" +
-      "<td>" + escapeHtml(employeeName(c.employeeId)) + "</td>" +
-      "<td>" + (c.startDate||"—") + "</td>" +
-      "<td><button class='btn secondary small' onclick='CRM.editClient(\"" + c.id + "\")'>Edit</button> " +
-        "<button class='btn danger small' onclick='CRM.deleteClient(\"" + c.id + "\")'>Delete</button></td>" +
-    "</tr>";
+    return "<div class='client-card' onclick='CRM.openClientDetail(\"" + c.id + "\")'>" +
+      "<div class='name'>" + escapeHtml(c.storeName) + "</div>" +
+      "<div style='font-size:12px;color:var(--muted);'>" + escapeHtml(c.ownerName||"No owner listed") + "</div>" +
+      "<div class='row2'>" +
+        "<span>" + money(c.monthlyFee) + "/mo</span>" +
+        "<span class='badge " + badgeClass + "'>" + escapeHtml(c.status) + "</span>" +
+      "</div>" +
+    "</div>";
   }).join("");
 }
 document.getElementById("clientSearch").addEventListener("input", renderClients);
@@ -523,6 +560,8 @@ function resetClientForm(){
   document.getElementById("clientStartDate").value = new Date().toISOString().slice(0,10);
   document.getElementById("clientEmployee").value = "";
   document.getElementById("clientAddress").value = "";
+  document.getElementById("clientWebAppUrl").value = "";
+  document.getElementById("clientWebAppPassword").value = "";
   document.getElementById("clientNotes").value = "";
   document.getElementById("clientFormTitle").textContent = "Add New Client";
   document.getElementById("saveClientBtn").textContent = "Add Client";
@@ -546,6 +585,8 @@ document.getElementById("saveClientBtn").addEventListener("click", function(){
     status: document.getElementById("clientStatus").value,
     startDate: document.getElementById("clientStartDate").value,
     employeeId: document.getElementById("clientEmployee").value,
+    webAppUrl: document.getElementById("clientWebAppUrl").value.trim(),
+    webAppPassword: document.getElementById("clientWebAppPassword").value.trim(),
     notes: document.getElementById("clientNotes").value.trim()
   };
 
@@ -566,6 +607,7 @@ document.getElementById("saveClientBtn").addEventListener("click", function(){
 document.getElementById("cancelEditClientBtn").addEventListener("click", resetClientForm);
 
 function editClient(id){
+  closeClientDetail();
   var c = state.clients.find(function(x){ return x.id === id; });
   if(!c) return;
   populateClientEmployeeSelect();
@@ -578,6 +620,8 @@ function editClient(id){
   document.getElementById("clientStartDate").value = c.startDate || "";
   document.getElementById("clientEmployee").value = c.employeeId || "";
   document.getElementById("clientAddress").value = c.address || "";
+  document.getElementById("clientWebAppUrl").value = c.webAppUrl || "";
+  document.getElementById("clientWebAppPassword").value = c.webAppPassword || "";
   document.getElementById("clientNotes").value = c.notes || "";
   document.getElementById("clientFormTitle").textContent = "Edit Client";
   document.getElementById("saveClientBtn").textContent = "Save Changes";
@@ -589,10 +633,63 @@ function deleteClient(id){
   if(!confirm("Delete this client? Their payment history will be kept but unlinked.")) return;
   state.clients = state.clients.filter(function(c){ return c.id !== id; });
   saveClients();
+  closeClientDetail();
   renderClients();
   renderDashboard();
   toast("Client deleted.");
 }
+
+// ================= CLIENT DETAIL MODAL =================
+var currentDetailClientId = null;
+
+function openClientDetail(id){
+  var c = state.clients.find(function(x){ return x.id === id; });
+  if(!c) return;
+  currentDetailClientId = id;
+
+  document.getElementById("detailStoreName").textContent = c.storeName;
+  var badgeClass = c.status === "active" ? "ok" : (c.status === "paused" ? "low" : "out");
+  document.getElementById("detailStatusBadge").innerHTML = "<span class='badge " + badgeClass + "'>" + escapeHtml(c.status) + "</span>";
+  document.getElementById("detailOwner").textContent = c.ownerName || "—";
+  document.getElementById("detailPhone").textContent = c.phone || "—";
+  document.getElementById("detailFee").textContent = money(c.monthlyFee);
+  document.getElementById("detailStartDate").textContent = c.startDate || "—";
+  document.getElementById("detailEmployee").textContent = employeeName(c.employeeId);
+  document.getElementById("detailAddress").textContent = c.address || "—";
+
+  var urlEl = document.getElementById("detailWebAppUrl");
+  if(c.webAppUrl){ urlEl.innerHTML = "<a href='" + escapeHtml(c.webAppUrl) + "' target='_blank' rel='noopener'>" + escapeHtml(c.webAppUrl) + "</a>"; }
+  else { urlEl.textContent = "—"; }
+  document.getElementById("detailWebAppPassword").textContent = c.webAppPassword || "—";
+  document.getElementById("detailNotes").textContent = c.notes || "—";
+
+  var clientPayments = state.payments.filter(function(p){ return p.clientId === id; })
+    .sort(function(a,b){ return (b.period||"").localeCompare(a.period||""); });
+  var tbody = document.getElementById("detailPaymentsBody");
+  var empty = document.getElementById("detailPaymentsEmpty");
+  empty.style.display = clientPayments.length === 0 ? "block" : "none";
+  tbody.innerHTML = clientPayments.map(function(p){
+    return "<tr><td>" + escapeHtml(p.period) + "</td><td>" + money(p.amount) + "</td><td>" +
+      (p.paidDate||"—") + "</td><td>" + escapeHtml(p.method||"—") + "</td></tr>";
+  }).join("");
+
+  document.getElementById("clientDetailOverlay").classList.add("show");
+}
+function closeClientDetail(){
+  currentDetailClientId = null;
+  document.getElementById("clientDetailOverlay").classList.remove("show");
+}
+document.getElementById("detailCloseBtn").addEventListener("click", closeClientDetail);
+document.getElementById("clientDetailOverlay").addEventListener("click", function(e){
+  if(e.target === this) closeClientDetail();
+});
+document.getElementById("detailEditBtn").addEventListener("click", function(){
+  if(currentDetailClientId) editClient(currentDetailClientId);
+});
+document.getElementById("detailLogPaymentBtn").addEventListener("click", function(){
+  if(currentDetailClientId) jumpToLogPayment(currentDetailClientId);
+  closeClientDetail();
+});
 
 // ================= EMPLOYEES =================
 function employeeName(id){
@@ -910,7 +1007,7 @@ document.getElementById("cloudPullBtn").addEventListener("click", function(){
 // ================= EXPOSE FOR INLINE HANDLERS =================
 window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
-  editEmployee: editEmployee, deleteEmployee: deleteEmployee
+  editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail
 };
 
 // ================= BOOT =================

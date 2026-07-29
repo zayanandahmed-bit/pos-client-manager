@@ -40,12 +40,16 @@ create table if not exists crm_clients (
   status text default 'active', -- active | paused | cancelled
   start_date date,
   notes text default '',
-  employee_id text default '' -- which employee signed this client
+  employee_id text default '', -- which employee signed this client
+  web_app_url text default '', -- this client's deployed POS app link
+  web_app_password text default '' -- this client's POS app-open password
 );
 
--- Column added after the table already existed for some setups — safe to
--- re-run, this is a no-op if the column is already there.
+-- Columns added after the table already existed for some setups — safe to
+-- re-run, these are no-ops if the columns are already there.
 alter table crm_clients add column if not exists employee_id text default '';
+alter table crm_clients add column if not exists web_app_url text default '';
+alter table crm_clients add column if not exists web_app_password text default '';
 
 create table if not exists crm_payments (
   id text primary key,
@@ -80,7 +84,8 @@ begin
     'clients', coalesce((select jsonb_agg(jsonb_build_object(
       'id', id, 'storeName', store_name, 'ownerName', owner_name, 'phone', phone,
       'address', address, 'monthlyFee', monthly_fee, 'status', status,
-      'startDate', start_date, 'notes', notes, 'employeeId', employee_id
+      'startDate', start_date, 'notes', notes, 'employeeId', employee_id,
+      'webAppUrl', web_app_url, 'webAppPassword', web_app_password
     )) from crm_clients), '[]'::jsonb),
 
     'payments', coalesce((select jsonb_agg(jsonb_build_object(
@@ -107,10 +112,11 @@ set search_path = public
 as $$
 begin
   delete from crm_clients where true;
-  insert into crm_clients (id, store_name, owner_name, phone, address, monthly_fee, status, start_date, notes, employee_id)
+  insert into crm_clients (id, store_name, owner_name, phone, address, monthly_fee, status, start_date, notes, employee_id, web_app_url, web_app_password)
   select x->>'id', x->>'storeName', coalesce(x->>'ownerName',''), coalesce(x->>'phone',''),
          coalesce(x->>'address',''), coalesce((x->>'monthlyFee')::numeric,0), coalesce(x->>'status','active'),
-         nullif(x->>'startDate','')::date, coalesce(x->>'notes',''), coalesce(x->>'employeeId','')
+         nullif(x->>'startDate','')::date, coalesce(x->>'notes',''), coalesce(x->>'employeeId',''),
+         coalesce(x->>'webAppUrl',''), coalesce(x->>'webAppPassword','')
   from jsonb_array_elements(clients) x;
 end;
 $$;
