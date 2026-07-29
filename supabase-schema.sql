@@ -20,6 +20,16 @@
 
 -- ============== TABLES ==============
 
+create table if not exists crm_employees (
+  id text primary key,
+  name text not null,
+  phone text default '',
+  role text default '', -- e.g. Sales, Support
+  status text default 'active', -- active | inactive
+  join_date date,
+  notes text default ''
+);
+
 create table if not exists crm_clients (
   id text primary key,
   store_name text not null,
@@ -29,8 +39,13 @@ create table if not exists crm_clients (
   monthly_fee numeric default 0,
   status text default 'active', -- active | paused | cancelled
   start_date date,
-  notes text default ''
+  notes text default '',
+  employee_id text default '' -- which employee signed this client
 );
+
+-- Column added after the table already existed for some setups — safe to
+-- re-run, this is a no-op if the column is already there.
+alter table crm_clients add column if not exists employee_id text default '';
 
 create table if not exists crm_payments (
   id text primary key,
@@ -44,7 +59,9 @@ create table if not exists crm_payments (
 
 create index if not exists idx_crm_payments_client_id on crm_payments(client_id);
 create index if not exists idx_crm_payments_period on crm_payments(period);
+create index if not exists idx_crm_clients_employee_id on crm_clients(employee_id);
 
+alter table crm_employees enable row level security;
 alter table crm_clients enable row level security;
 alter table crm_payments enable row level security;
 
@@ -63,13 +80,18 @@ begin
     'clients', coalesce((select jsonb_agg(jsonb_build_object(
       'id', id, 'storeName', store_name, 'ownerName', owner_name, 'phone', phone,
       'address', address, 'monthlyFee', monthly_fee, 'status', status,
-      'startDate', start_date, 'notes', notes
+      'startDate', start_date, 'notes', notes, 'employeeId', employee_id
     )) from crm_clients), '[]'::jsonb),
 
     'payments', coalesce((select jsonb_agg(jsonb_build_object(
       'id', id, 'clientId', client_id, 'period', period, 'amount', amount,
       'paidDate', paid_date, 'method', method, 'notes', notes
-    )) from crm_payments), '[]'::jsonb)
+    )) from crm_payments), '[]'::jsonb),
+
+    'employees', coalesce((select jsonb_agg(jsonb_build_object(
+      'id', id, 'name', name, 'phone', phone, 'role', role, 'status', status,
+      'joinDate', join_date, 'notes', notes
+    )) from crm_employees), '[]'::jsonb)
   ) into result;
   return result;
 end;
@@ -85,11 +107,28 @@ set search_path = public
 as $$
 begin
   delete from crm_clients where true;
-  insert into crm_clients (id, store_name, owner_name, phone, address, monthly_fee, status, start_date, notes)
+  insert into crm_clients (id, store_name, owner_name, phone, address, monthly_fee, status, start_date, notes, employee_id)
   select x->>'id', x->>'storeName', coalesce(x->>'ownerName',''), coalesce(x->>'phone',''),
          coalesce(x->>'address',''), coalesce((x->>'monthlyFee')::numeric,0), coalesce(x->>'status','active'),
-         nullif(x->>'startDate','')::date, coalesce(x->>'notes','')
+         nullif(x->>'startDate','')::date, coalesce(x->>'notes',''), coalesce(x->>'employeeId','')
   from jsonb_array_elements(clients) x;
+end;
+$$;
+
+-- ============== sync_replace_crm_employees: instant full replace ==============
+
+create or replace function sync_replace_crm_employees(employees jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from crm_employees where true;
+  insert into crm_employees (id, name, phone, role, status, join_date, notes)
+  select x->>'id', x->>'name', coalesce(x->>'phone',''), coalesce(x->>'role',''),
+         coalesce(x->>'status','active'), nullif(x->>'joinDate','')::date, coalesce(x->>'notes','')
+  from jsonb_array_elements(employees) x;
 end;
 $$;
 
@@ -115,3 +154,4 @@ $$;
 grant execute on function sync_pull_crm() to anon;
 grant execute on function sync_replace_crm_clients(jsonb) to anon;
 grant execute on function sync_replace_crm_payments(jsonb) to anon;
+grant execute on function sync_replace_crm_employees(jsonb) to anon;

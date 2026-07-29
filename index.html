@@ -95,6 +95,7 @@
     <div class="brand">📊 Client Manager</div>
     <button class="nav-btn active" data-view="dashboard">📈 Dashboard</button>
     <button class="nav-btn" data-view="clients">🏬 Clients</button>
+    <button class="nav-btn" data-view="employees">🧑‍💼 Employees</button>
     <button class="nav-btn" data-view="payments">💰 Payments</button>
     <button class="nav-btn" data-view="settings">⚙️ Settings</button>
   </div>
@@ -154,6 +155,11 @@
         </div>
 
         <div class="panel">
+          <h3 style="margin-top:0;">Clients Signed — by Employee</h3>
+          <div class="chart-box"><canvas id="employeeChart"></canvas></div>
+        </div>
+
+        <div class="panel">
           <div class="flex-between">
             <h3 style="margin:0;">Clients Overdue This Month</h3>
           </div>
@@ -186,7 +192,10 @@
             </div>
             <div><label>Start Date</label><input type="date" id="clientStartDate"></div>
           </div>
-          <div style="margin-top:12px;"><label>Address</label><input id="clientAddress" placeholder="Optional"></div>
+          <div class="grid grid-2" style="margin-top:12px;">
+            <div><label>Signed By (Employee)</label><select id="clientEmployee"><option value="">— none —</option></select></div>
+            <div><label>Address</label><input id="clientAddress" placeholder="Optional"></div>
+          </div>
           <div style="margin-top:12px;"><label>Notes</label><input id="clientNotes" placeholder="Optional"></div>
           <div class="row" style="margin-top:14px;">
             <button class="btn" id="saveClientBtn">Add Client</button>
@@ -201,10 +210,49 @@
           </div>
           <input id="clientSearch" placeholder="Search by store name, owner, or phone..." style="margin-bottom:12px;">
           <table>
-            <thead><tr><th>Store</th><th>Owner</th><th>Phone</th><th>Monthly Fee</th><th>Status</th><th>Start Date</th><th></th></tr></thead>
+            <thead><tr><th>Store</th><th>Owner</th><th>Phone</th><th>Monthly Fee</th><th>Status</th><th>Signed By</th><th>Start Date</th><th></th></tr></thead>
             <tbody id="clientsBody"></tbody>
           </table>
           <div id="clientsEmpty" class="empty" style="display:none;">No clients added yet.</div>
+        </div>
+      </div>
+
+      <!-- EMPLOYEES -->
+      <div class="view" id="view-employees">
+        <div class="panel">
+          <h3 style="margin-top:0;" id="employeeFormTitle">Add New Employee</h3>
+          <input type="hidden" id="employeeEditId">
+          <div class="grid grid-3">
+            <div><label>Name *</label><input id="employeeName" placeholder="e.g. Usman Khan"></div>
+            <div><label>Phone</label><input id="employeePhone" placeholder="03xx-xxxxxxx"></div>
+            <div><label>Role</label><input id="employeeRole" placeholder="e.g. Sales"></div>
+          </div>
+          <div class="grid grid-2" style="margin-top:12px;">
+            <div><label>Status</label>
+              <select id="employeeStatus">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div><label>Join Date</label><input type="date" id="employeeJoinDate"></div>
+          </div>
+          <div style="margin-top:12px;"><label>Notes</label><input id="employeeNotes" placeholder="Optional"></div>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn" id="saveEmployeeBtn">Add Employee</button>
+            <button class="btn secondary" id="cancelEditEmployeeBtn" style="display:none;">Cancel Edit</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="flex-between">
+            <h3 style="margin:0;">All Employees</h3>
+            <span id="employeesSummary" style="font-size:13px;color:var(--muted);"></span>
+          </div>
+          <table>
+            <thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Status</th><th>Clients Signed</th><th>Join Date</th><th></th></tr></thead>
+            <tbody id="employeesBody"></tbody>
+          </table>
+          <div id="employeesEmpty" class="empty" style="display:none;">No employees added yet.</div>
         </div>
       </div>
 
@@ -298,12 +346,13 @@ var BUILT_IN_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 var state = {
   clients: [],
   payments: [],
+  employees: [],
   cloud: { url: BUILT_IN_SUPABASE_URL, secret: BUILT_IN_SUPABASE_ANON_KEY, enabled: true, lastSync: null }
 };
 
 var LOCAL_STORAGE_KEY = "crmDashboard_localState_v1";
 function saveLocalState(){
-  try{ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ clients: state.clients, payments: state.payments })); }catch(e){}
+  try{ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ clients: state.clients, payments: state.payments, employees: state.employees })); }catch(e){}
 }
 function loadLocalState(){
   try{
@@ -312,6 +361,7 @@ function loadLocalState(){
     var data = JSON.parse(raw);
     if(data.clients) state.clients = data.clients;
     if(data.payments) state.payments = data.payments;
+    if(data.employees) state.employees = data.employees;
     return true;
   }catch(e){ return false; }
 }
@@ -349,7 +399,7 @@ function setCloudStatus(kind, detail){
 
 var domainTimers = {};
 var domainInFlight = {};
-var DOMAIN_RPC = { clients: "sync_replace_crm_clients", payments: "sync_replace_crm_payments" };
+var DOMAIN_RPC = { clients: "sync_replace_crm_clients", payments: "sync_replace_crm_payments", employees: "sync_replace_crm_employees" };
 
 function pushDomainInstant(domain){
   dirty[domain] = true;
@@ -391,15 +441,18 @@ function cloudPullAll(){
 function applyCloudData(data){
   if(data.clients) state.clients = data.clients;
   if(data.payments) state.payments = data.payments;
+  if(data.employees) state.employees = data.employees;
 }
 
 function saveClients(){ saveLocalState(); pushDomainInstant("clients"); }
 function savePayments(){ saveLocalState(); pushDomainInstant("payments"); }
+function saveEmployees(){ saveLocalState(); pushDomainInstant("employees"); }
 
 // ================= NAV =================
 var VIEW_META = {
   dashboard: { title: "Dashboard", sub: "Overview of your client base and revenue" },
   clients: { title: "Clients", sub: "Add, edit, and manage your client stores" },
+  employees: { title: "Employees", sub: "Track who signed each client" },
   payments: { title: "Payments", sub: "Log and browse client payment history" },
   settings: { title: "Settings", sub: "Cloud sync configuration" }
 };
@@ -413,7 +466,8 @@ document.querySelectorAll(".nav-btn").forEach(function(btn){
     document.getElementById("viewTitle").textContent = meta.title;
     document.getElementById("viewSubtitle").textContent = meta.sub;
     if(btn.dataset.view === "dashboard") renderDashboard();
-    if(btn.dataset.view === "clients") renderClients();
+    if(btn.dataset.view === "clients"){ populateClientEmployeeSelect(); renderClients(); }
+    if(btn.dataset.view === "employees") renderEmployees();
     if(btn.dataset.view === "payments"){ populatePaymentClientSelect(); renderPayments(); }
     if(btn.dataset.view === "settings") loadSettingsForm();
   });
@@ -442,6 +496,7 @@ function renderClients(){
       "<td>" + escapeHtml(c.phone||"—") + "</td>" +
       "<td>" + money(c.monthlyFee) + "</td>" +
       "<td><span class='badge " + badgeClass + "'>" + escapeHtml(c.status) + "</span></td>" +
+      "<td>" + escapeHtml(employeeName(c.employeeId)) + "</td>" +
       "<td>" + (c.startDate||"—") + "</td>" +
       "<td><button class='btn secondary small' onclick='CRM.editClient(\"" + c.id + "\")'>Edit</button> " +
         "<button class='btn danger small' onclick='CRM.deleteClient(\"" + c.id + "\")'>Delete</button></td>" +
@@ -449,6 +504,14 @@ function renderClients(){
   }).join("");
 }
 document.getElementById("clientSearch").addEventListener("input", renderClients);
+
+function populateClientEmployeeSelect(){
+  var sel = document.getElementById("clientEmployee");
+  var current = sel.value;
+  sel.innerHTML = "<option value=''>— none —</option>" + state.employees.slice().sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); })
+    .map(function(e){ return "<option value='" + e.id + "'>" + escapeHtml(e.name) + "</option>"; }).join("");
+  sel.value = current || "";
+}
 
 function resetClientForm(){
   document.getElementById("clientEditId").value = "";
@@ -458,6 +521,7 @@ function resetClientForm(){
   document.getElementById("clientFee").value = "";
   document.getElementById("clientStatus").value = "active";
   document.getElementById("clientStartDate").value = new Date().toISOString().slice(0,10);
+  document.getElementById("clientEmployee").value = "";
   document.getElementById("clientAddress").value = "";
   document.getElementById("clientNotes").value = "";
   document.getElementById("clientFormTitle").textContent = "Add New Client";
@@ -481,6 +545,7 @@ document.getElementById("saveClientBtn").addEventListener("click", function(){
     monthlyFee: fee,
     status: document.getElementById("clientStatus").value,
     startDate: document.getElementById("clientStartDate").value,
+    employeeId: document.getElementById("clientEmployee").value,
     notes: document.getElementById("clientNotes").value.trim()
   };
 
@@ -503,6 +568,7 @@ document.getElementById("cancelEditClientBtn").addEventListener("click", resetCl
 function editClient(id){
   var c = state.clients.find(function(x){ return x.id === id; });
   if(!c) return;
+  populateClientEmployeeSelect();
   document.getElementById("clientEditId").value = c.id;
   document.getElementById("clientStoreName").value = c.storeName || "";
   document.getElementById("clientOwnerName").value = c.ownerName || "";
@@ -510,6 +576,7 @@ function editClient(id){
   document.getElementById("clientFee").value = c.monthlyFee || 0;
   document.getElementById("clientStatus").value = c.status || "active";
   document.getElementById("clientStartDate").value = c.startDate || "";
+  document.getElementById("clientEmployee").value = c.employeeId || "";
   document.getElementById("clientAddress").value = c.address || "";
   document.getElementById("clientNotes").value = c.notes || "";
   document.getElementById("clientFormTitle").textContent = "Edit Client";
@@ -525,6 +592,104 @@ function deleteClient(id){
   renderClients();
   renderDashboard();
   toast("Client deleted.");
+}
+
+// ================= EMPLOYEES =================
+function employeeName(id){
+  if(!id) return "—";
+  var e = state.employees.find(function(x){ return x.id === id; });
+  return e ? e.name : "(deleted employee)";
+}
+
+function renderEmployees(){
+  var body = document.getElementById("employeesBody");
+  var empty = document.getElementById("employeesEmpty");
+  var sorted = state.employees.slice().sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
+  empty.style.display = sorted.length === 0 ? "block" : "none";
+  document.getElementById("employeesSummary").textContent = sorted.length + " employee(s)";
+
+  body.innerHTML = sorted.map(function(e){
+    var signedCount = state.clients.filter(function(c){ return c.employeeId === e.id; }).length;
+    var badgeClass = e.status === "active" ? "ok" : "muted";
+    return "<tr>" +
+      "<td>" + escapeHtml(e.name) + "</td>" +
+      "<td>" + escapeHtml(e.phone||"—") + "</td>" +
+      "<td>" + escapeHtml(e.role||"—") + "</td>" +
+      "<td><span class='badge " + badgeClass + "'>" + escapeHtml(e.status) + "</span></td>" +
+      "<td>" + signedCount + "</td>" +
+      "<td>" + (e.joinDate||"—") + "</td>" +
+      "<td><button class='btn secondary small' onclick='CRM.editEmployee(\"" + e.id + "\")'>Edit</button> " +
+        "<button class='btn danger small' onclick='CRM.deleteEmployee(\"" + e.id + "\")'>Delete</button></td>" +
+    "</tr>";
+  }).join("");
+}
+
+function resetEmployeeForm(){
+  document.getElementById("employeeEditId").value = "";
+  document.getElementById("employeeName").value = "";
+  document.getElementById("employeePhone").value = "";
+  document.getElementById("employeeRole").value = "";
+  document.getElementById("employeeStatus").value = "active";
+  document.getElementById("employeeJoinDate").value = new Date().toISOString().slice(0,10);
+  document.getElementById("employeeNotes").value = "";
+  document.getElementById("employeeFormTitle").textContent = "Add New Employee";
+  document.getElementById("saveEmployeeBtn").textContent = "Add Employee";
+  document.getElementById("cancelEditEmployeeBtn").style.display = "none";
+}
+resetEmployeeForm();
+
+document.getElementById("saveEmployeeBtn").addEventListener("click", function(){
+  var name = document.getElementById("employeeName").value.trim();
+  if(!name){ toast("Employee name is required."); return; }
+
+  var editId = document.getElementById("employeeEditId").value;
+  var payload = {
+    name: name,
+    phone: document.getElementById("employeePhone").value.trim(),
+    role: document.getElementById("employeeRole").value.trim(),
+    status: document.getElementById("employeeStatus").value,
+    joinDate: document.getElementById("employeeJoinDate").value,
+    notes: document.getElementById("employeeNotes").value.trim()
+  };
+
+  if(editId){
+    var existing = state.employees.find(function(x){ return x.id === editId; });
+    if(existing) Object.assign(existing, payload);
+    toast("Employee updated.");
+  } else {
+    payload.id = uid();
+    state.employees.push(payload);
+    toast("Employee added.");
+  }
+  saveEmployees();
+  resetEmployeeForm();
+  renderEmployees();
+  renderDashboard();
+});
+document.getElementById("cancelEditEmployeeBtn").addEventListener("click", resetEmployeeForm);
+
+function editEmployee(id){
+  var e = state.employees.find(function(x){ return x.id === id; });
+  if(!e) return;
+  document.getElementById("employeeEditId").value = e.id;
+  document.getElementById("employeeName").value = e.name || "";
+  document.getElementById("employeePhone").value = e.phone || "";
+  document.getElementById("employeeRole").value = e.role || "";
+  document.getElementById("employeeStatus").value = e.status || "active";
+  document.getElementById("employeeJoinDate").value = e.joinDate || "";
+  document.getElementById("employeeNotes").value = e.notes || "";
+  document.getElementById("employeeFormTitle").textContent = "Edit Employee";
+  document.getElementById("saveEmployeeBtn").textContent = "Save Changes";
+  document.getElementById("cancelEditEmployeeBtn").style.display = "inline-block";
+  window.scrollTo(0,0);
+}
+function deleteEmployee(id){
+  if(!confirm("Delete this employee? Clients they signed will show \"(deleted employee)\" unless you reassign them first.")) return;
+  state.employees = state.employees.filter(function(x){ return x.id !== id; });
+  saveEmployees();
+  renderEmployees();
+  renderDashboard();
+  toast("Employee deleted.");
 }
 
 // ================= PAYMENTS =================
@@ -700,6 +865,18 @@ function renderDashboard(){
     data: { labels: buckets.map(function(b){ return b.label; }), datasets: [{ data: bucketCounts, backgroundColor: "#6366f1" }] },
     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } }
   });
+
+  // Clients signed per employee
+  var employeeLabels = state.employees.slice().sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); }).map(function(e){ return e.name; });
+  var employeeCounts = state.employees.slice().sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); })
+    .map(function(e){ return state.clients.filter(function(c){ return c.employeeId === e.id; }).length; });
+  var unassignedCount = state.clients.filter(function(c){ return !c.employeeId; }).length;
+  if(unassignedCount > 0){ employeeLabels.push("(unassigned)"); employeeCounts.push(unassignedCount); }
+  upsertChart("employee", "employeeChart", {
+    type: "bar",
+    data: { labels: employeeLabels, datasets: [{ label: "Clients signed", data: employeeCounts, backgroundColor: "#0891b2" }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } }
+  });
 }
 
 function jumpToLogPayment(clientId){
@@ -725,13 +902,16 @@ document.getElementById("cloudPullBtn").addEventListener("click", function(){
   cloudPullAll().then(function(data){
     applyCloudData(data);
     saveLocalState();
-    renderClients(); renderPayments(); renderDashboard();
+    renderClients(); renderEmployees(); renderPayments(); renderDashboard();
     toast("Pulled latest from cloud.");
   }).catch(function(err){ toast("Pull failed: " + err.message); });
 });
 
 // ================= EXPOSE FOR INLINE HANDLERS =================
-window.CRM = { editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment };
+window.CRM = {
+  editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
+  editEmployee: editEmployee, deleteEmployee: deleteEmployee
+};
 
 // ================= BOOT =================
 var hadLocalData = loadLocalState();
@@ -742,14 +922,16 @@ if(cloudReady()){
       if(dirty[k]) return; // don't clobber an unconfirmed local edit
       if(k === "clients") state.clients = data.clients;
       if(k === "payments") state.payments = data.payments;
+      if(k === "employees") state.employees = data.employees;
     });
-    renderClients(); renderPayments(); renderDashboard();
+    renderClients(); renderEmployees(); renderPayments(); renderDashboard();
     if(!hadLocalData) toast("Synced with cloud.");
   }).catch(function(err){
     toast("Couldn't reach the database — check your internet connection.");
   });
 }
 renderClients();
+renderEmployees();
 populatePaymentClientSelect();
 renderPayments();
 renderDashboard();
