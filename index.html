@@ -88,9 +88,10 @@
   <div class="box">
     <div style="font-size:40px;">🔐</div>
     <h1>Client Manager</h1>
-    <p>Enter the password to open your dashboard.</p>
-    <input type="password" id="lockPasswordInput" placeholder="Password" autocomplete="off">
-    <button id="lockUnlockBtn">Unlock</button>
+    <p>Log in to open your dashboard.</p>
+    <input type="text" id="lockUsernameInput" placeholder="Username" autocomplete="username" style="margin-bottom:10px;">
+    <input type="password" id="lockPasswordInput" placeholder="Password" autocomplete="current-password">
+    <button id="lockUnlockBtn">Log In</button>
     <div id="lockError"></div>
   </div>
 </div>
@@ -380,6 +381,23 @@
           </div>
           <p class="hint" id="cloudLastSync" style="margin-top:8px;font-size:12px;color:var(--muted);"></p>
         </div>
+
+        <div class="panel">
+          <h3 style="margin-top:0;">Change Login</h3>
+          <p style="color:var(--muted);font-size:13px;">Change the username/password used on this app's login screen. You need your current password to change it.</p>
+          <div class="grid grid-2">
+            <div><label>Current Username</label><input id="loginCurrentUsername" autocomplete="username"></div>
+            <div><label>Current Password</label><input type="password" id="loginCurrentPassword" autocomplete="current-password"></div>
+          </div>
+          <div class="grid grid-2" style="margin-top:12px;">
+            <div><label>New Username</label><input id="loginNewUsername" autocomplete="username"></div>
+            <div><label>New Password</label><input type="password" id="loginNewPassword" autocomplete="new-password"></div>
+          </div>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn secondary" id="changeLoginBtn">Change Login</button>
+          </div>
+          <p id="changeLoginStatus" style="margin-top:8px;font-size:12px;"></p>
+        </div>
       </div>
 
     </div>
@@ -392,24 +410,55 @@
 (function(){
 "use strict";
 
-// ================= PASSWORD GATE =================
-// UI deterrent only, not real security — same tradeoff as the POS app.
-var LOCK_PASSWORD = "clientmanager2026";
-var lockScreen = document.getElementById("lockScreen");
-document.getElementById("lockUnlockBtn").addEventListener("click", tryUnlock);
-document.getElementById("lockPasswordInput").addEventListener("keydown", function(e){ if(e.key === "Enter") tryUnlock(); });
-function tryUnlock(){
-  var val = document.getElementById("lockPasswordInput").value;
-  if(val === LOCK_PASSWORD){ lockScreen.style.display = "none"; }
-  else {
-    document.getElementById("lockError").textContent = "Incorrect password.";
-    document.getElementById("lockPasswordInput").value = "";
-  }
-}
-
 // ================= STATE =================
 var BUILT_IN_SUPABASE_URL = "https://ajevxwdgmpaakjkffvmf.supabase.co";
 var BUILT_IN_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqZXZ4d2RnbXBhYWtqa2Zmdm1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwNjE5NzIsImV4cCI6MjEwMDYzNzk3Mn0.bB97bHOFgCeMUTYUraOArzvXAkFRHxiajrCg3gwCGrc";
+
+// ================= LOGIN GATE =================
+// Real server-side username/password check via Postgres (bcrypt hash
+// compared inside verify_app_login) — the actual password no longer lives
+// in this file's source at all, unlike the old hardcoded-string gate.
+var LOGIN_APP_NAME = "client-manager";
+var lockScreen = document.getElementById("lockScreen");
+document.getElementById("lockUnlockBtn").addEventListener("click", tryUnlock);
+["lockUsernameInput","lockPasswordInput"].forEach(function(id){
+  document.getElementById(id).addEventListener("keydown", function(e){ if(e.key === "Enter") tryUnlock(); });
+});
+function tryUnlock(){
+  var username = document.getElementById("lockUsernameInput").value.trim();
+  var password = document.getElementById("lockPasswordInput").value;
+  if(!username || !password){
+    document.getElementById("lockError").textContent = "Enter both username and password.";
+    return;
+  }
+  var btn = document.getElementById("lockUnlockBtn");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  fetch(BUILT_IN_SUPABASE_URL + "/rest/v1/rpc/verify_app_login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": BUILT_IN_SUPABASE_ANON_KEY,
+      "Authorization": "Bearer " + BUILT_IN_SUPABASE_ANON_KEY
+    },
+    body: JSON.stringify({ p_app: LOGIN_APP_NAME, p_username: username, p_password: password })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t || ("HTTP " + r.status)); });
+    return r.json();
+  }).then(function(ok){
+    if(ok){
+      lockScreen.style.display = "none";
+    } else {
+      document.getElementById("lockError").textContent = "Incorrect username or password.";
+      document.getElementById("lockPasswordInput").value = "";
+    }
+  }).catch(function(err){
+    document.getElementById("lockError").textContent = "Couldn't reach the database — check your internet connection.";
+  }).finally(function(){
+    btn.disabled = false;
+    btn.textContent = "Log In";
+  });
+}
 
 var state = {
   clients: [],
@@ -1085,6 +1134,41 @@ document.getElementById("cloudPullBtn").addEventListener("click", function(){
     renderClients(); renderEmployees(); renderPayments(); renderDashboard();
     toast("Pulled latest from cloud.");
   }).catch(function(err){ toast("Pull failed: " + err.message); });
+});
+
+document.getElementById("changeLoginBtn").addEventListener("click", function(){
+  var curUser = document.getElementById("loginCurrentUsername").value.trim();
+  var curPass = document.getElementById("loginCurrentPassword").value;
+  var newUser = document.getElementById("loginNewUsername").value.trim();
+  var newPass = document.getElementById("loginNewPassword").value;
+  var statusEl = document.getElementById("changeLoginStatus");
+  if(!curUser || !curPass || !newUser || !newPass){
+    statusEl.style.color = "var(--red)";
+    statusEl.textContent = "Fill in all four fields.";
+    return;
+  }
+  statusEl.style.color = "var(--muted)";
+  statusEl.textContent = "Checking…";
+  fetch(BUILT_IN_SUPABASE_URL + "/rest/v1/rpc/set_app_login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": BUILT_IN_SUPABASE_ANON_KEY, "Authorization": "Bearer " + BUILT_IN_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ p_app: LOGIN_APP_NAME, p_username: curUser, p_current_password: curPass, p_new_username: newUser, p_new_password: newPass })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t || ("HTTP " + r.status)); });
+    return r.json();
+  }).then(function(ok){
+    if(ok){
+      statusEl.style.color = "var(--green)";
+      statusEl.textContent = "Login changed. Use the new username/password next time you log in.";
+      ["loginCurrentUsername","loginCurrentPassword","loginNewUsername","loginNewPassword"].forEach(function(id){ document.getElementById(id).value = ""; });
+    } else {
+      statusEl.style.color = "var(--red)";
+      statusEl.textContent = "Current username/password is incorrect.";
+    }
+  }).catch(function(err){
+    statusEl.style.color = "var(--red)";
+    statusEl.textContent = "Couldn't reach the database: " + err.message;
+  });
 });
 
 // ================= EXPOSE FOR INLINE HANDLERS =================

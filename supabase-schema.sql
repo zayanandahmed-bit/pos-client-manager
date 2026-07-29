@@ -161,3 +161,82 @@ grant execute on function sync_pull_crm() to anon;
 grant execute on function sync_replace_crm_clients(jsonb) to anon;
 grant execute on function sync_replace_crm_payments(jsonb) to anon;
 grant execute on function sync_replace_crm_employees(jsonb) to anon;
+
+-- ============== APP LOGIN (real username + password) ==============
+-- Replaces the old hardcoded-in-JavaScript password with a real
+-- server-side check: the actual password is never present in the app's
+-- source code anymore, only a one-way bcrypt hash sits in the database,
+-- and the app just asks Postgres "does this match?" and gets true/false
+-- back. This is shared by BOTH apps (POS and Client Manager) since they
+-- live in the same Supabase project — each app passes its own app_name
+-- ('pos-hafiz-dairy' or 'client-manager') so their credentials are
+-- independent even though the mechanism is identical.
+--
+-- Honest limits: this gates the app's UI, not the data functions below —
+-- someone who already has your anon key can still call sync_pull_crm()
+-- etc. directly (same as before). What's genuinely new is that reading
+-- the page's source no longer reveals the password, and you can change
+-- it any time from Settings without needing to touch code or re-run SQL.
+
+create extension if not exists pgcrypto;
+
+create table if not exists app_logins (
+  app_name text not null,
+  username text not null,
+  password_hash text not null,
+  primary key (app_name, username)
+);
+alter table app_logins enable row level security;
+
+create or replace function verify_app_login(p_app text, p_username text, p_password text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hash text;
+begin
+  select password_hash into v_hash from app_logins where app_name = p_app and username = p_username;
+  if v_hash is null then
+    return false;
+  end if;
+  return v_hash = crypt(p_password, v_hash);
+end;
+$$;
+
+-- Lets a logged-in user change their own app's username/password from
+-- Settings. Requires the CURRENT password to succeed — you can't change
+-- credentials without already knowing the existing ones.
+create or replace function set_app_login(p_app text, p_username text, p_current_password text, p_new_username text, p_new_password text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not verify_app_login(p_app, p_username, p_current_password) then
+    return false;
+  end if;
+  delete from app_logins where app_name = p_app and username = p_username;
+  insert into app_logins (app_name, username, password_hash)
+  values (p_app, p_new_username, crypt(p_new_password, gen_salt('bf')));
+  return true;
+end;
+$$;
+
+grant execute on function verify_app_login(text, text, text) to anon;
+grant execute on function set_app_login(text, text, text, text, text) to anon;
+
+-- Seed the initial login — CHANGE THIS from the app's Settings panel right
+-- after setup, since these starting credentials are visible in this file.
+-- Checks for ANY existing login on that app_name (not just this exact
+-- username), so re-running this file after you've changed the username
+-- never silently re-adds the old default alongside your real one.
+insert into app_logins (app_name, username, password_hash)
+select 'pos-hafiz-dairy', 'admin', crypt('changeme123', gen_salt('bf'))
+where not exists (select 1 from app_logins where app_name = 'pos-hafiz-dairy');
+
+insert into app_logins (app_name, username, password_hash)
+select 'client-manager', 'admin', crypt('changeme123', gen_salt('bf'))
+where not exists (select 1 from app_logins where app_name = 'client-manager');
