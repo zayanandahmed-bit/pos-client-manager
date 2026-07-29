@@ -394,7 +394,7 @@
           </div>
           <input id="paymentSearch" placeholder="Search by store name or period (e.g. 2026-07)..." style="margin-bottom:12px;">
           <table>
-            <thead><tr><th>Store</th><th>Period</th><th>Amount</th><th>Paid Date</th><th>Method</th><th>Notes</th><th></th></tr></thead>
+            <thead><tr><th>Period</th><th>Store</th><th>Total Collected</th><th>Status</th><th>Payments</th></tr></thead>
             <tbody id="paymentsBody"></tbody>
           </table>
           <div id="paymentsEmpty" class="empty" style="display:none;">No payments logged yet.</div>
@@ -792,14 +792,6 @@ function dueBadgeClass(st){
   if(st === "ok") return "ok";
   if(st === "upcoming") return "muted";
   return "";
-}
-// Deliberately does NOT flag a single row as "short" against the fee — a
-// client can legitimately cover one cycle across two or more payments (e.g.
-// 17,000 + 1,000 = 18,000), and flagging each partial row would look wrong.
-// Whether they're actually behind is judged in aggregate by balanceInfo()
-// and shown on the client's due-status banner instead.
-function paymentAmountCell(p, fee){
-  return money(p.amount);
 }
 function fmtDate(d){
   if(!d) return "—";
@@ -1254,22 +1246,42 @@ function renderPayments(){
     if(!q) return true;
     return clientName(p.clientId).toLowerCase().indexOf(q) !== -1 || (p.period||"").indexOf(q) !== -1;
   });
-  var sorted = filtered.slice().sort(function(a,b){ return (b.period||"").localeCompare(a.period||"") || (b.paidDate||"").localeCompare(a.paidDate||""); });
-  empty.style.display = sorted.length === 0 ? "block" : "none";
+  empty.style.display = filtered.length === 0 ? "block" : "none";
   var total = filtered.reduce(function(s,p){ return s+(p.amount||0); }, 0);
-  document.getElementById("paymentsSummary").textContent = sorted.length + " payment(s) shown · Total: " + money(total);
+  document.getElementById("paymentsSummary").textContent = filtered.length + " payment(s) shown · Total: " + money(total);
 
-  body.innerHTML = sorted.map(function(p){
-    var client = state.clients.find(function(c){ return c.id === p.clientId; });
-    return "<tr>" +
-      "<td>" + escapeHtml(clientName(p.clientId)) + "</td>" +
-      "<td>" + escapeHtml(p.period) + "</td>" +
-      "<td>" + paymentAmountCell(p, client ? client.monthlyFee : 0) + "</td>" +
-      "<td>" + (p.paidDate||"—") + "</td>" +
-      "<td>" + escapeHtml(p.method||"—") + "</td>" +
-      "<td>" + escapeHtml(p.notes||"") + "</td>" +
-      "<td><button class='btn danger small' onclick='CRM.deletePayment(\"" + p.id + "\")'>Delete</button></td>" +
-    "</tr>";
+  // Group into one box per (month, client) pair — same idea as the client
+  // detail modal's monthly boxes, but spanning every client at once.
+  var groups = {};
+  filtered.forEach(function(p){
+    var key = (p.period || "(no period)") + "||" + p.clientId;
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(p);
+  });
+  var keys = Object.keys(groups).sort(function(a,b){
+    var pa = a.split("||")[0], pb = b.split("||")[0];
+    if(pa !== pb) return pb.localeCompare(pa);
+    return clientName(a.split("||")[1]).localeCompare(clientName(b.split("||")[1]));
+  });
+
+  body.innerHTML = keys.map(function(key){
+    var parts = key.split("||");
+    var period = parts[0];
+    var clientId = parts[1];
+    var entries = groups[key];
+    var client = state.clients.find(function(c){ return c.id === clientId; });
+    var fee = client ? (client.monthlyFee||0) : 0;
+    var groupTotal = entries.reduce(function(s,p){ return s+(p.amount||0); }, 0);
+    var statusHtml;
+    if(fee && groupTotal < fee) statusHtml = "<span class='badge out'>Short " + money(fee - groupTotal) + "</span>";
+    else if(fee && groupTotal > fee) statusHtml = "<span class='badge low'>Over " + money(groupTotal - fee) + "</span>";
+    else statusHtml = "<span class='badge ok'>Full</span>";
+    var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
+      .map(function(p){
+        return money(p.amount) + " on " + (p.paidDate||"—") + " (" + escapeHtml(p.method||"—") + ")" +
+          " <button class='btn danger small' onclick='CRM.deletePayment(\"" + p.id + "\")' style='margin-left:6px;'>Delete</button>";
+      }).join("<br>");
+    return "<tr><td>" + escapeHtml(period) + "</td><td>" + escapeHtml(clientName(clientId)) + "</td><td>" + money(groupTotal) + "</td><td>" + statusHtml + "</td><td style='font-size:12px;'>" + entriesHtml + "</td></tr>";
   }).join("");
 }
 document.getElementById("paymentSearch").addEventListener("input", renderPayments);
