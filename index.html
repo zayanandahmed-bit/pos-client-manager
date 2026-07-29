@@ -252,6 +252,7 @@
             <div><label>Next Payment Due</label><div id="detailNextDue">—</div></div>
           </div>
           <div id="detailDueBanner" style="margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:600;">—</div>
+          <div id="detailBalanceBanner" style="display:none;margin-top:8px;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:600;background:#fee2e2;color:#991b1b;"></div>
           <div style="margin-top:12px;font-size:13px;"><label>Web App</label><div id="detailWebAppUrl">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Web App Username</label><div id="detailWebAppUsername">—</div></div>
           <div style="margin-top:8px;font-size:13px;"><label>Web App Password</label><div id="detailWebAppPassword">—</div></div>
@@ -651,6 +652,22 @@ function parseDateStr(s){
   return isNaN(d.getTime()) ? null : d;
 }
 
+function clientPaymentCount(c){
+  return state.payments.filter(function(p){ return p.clientId === c.id && p.paidDate; }).length;
+}
+// Compares what a client SHOULD have paid by now (payCount * their fee) against
+// what they've actually handed over. A positive `owed` means they've paid
+// short at some point — doesn't matter which specific cycle it was, since a
+// shortfall just carries forward until they make up the difference.
+function balanceInfo(c){
+  var fee = c.monthlyFee || 0;
+  var payCount = clientPaymentCount(c);
+  var totalPaid = state.payments.filter(function(p){ return p.clientId === c.id; })
+    .reduce(function(s,p){ return s + (p.amount||0); }, 0);
+  var expected = payCount * fee;
+  return { owed: expected - totalPaid, expected: expected, totalPaid: totalPaid };
+}
+
 // Returns { state, days, nextDue, label, cycle } where state is one of:
 // "overdue" | "due-today" | "ok" | "upcoming" | "unknown" | "inactive"
 function dueInfo(c){
@@ -662,7 +679,7 @@ function dueInfo(c){
   if(!start){
     return { state:"unknown", days:0, nextDue:null, cycle:cycle, label:"No start date on record" };
   }
-  var payCount = state.payments.filter(function(p){ return p.clientId === c.id && p.paidDate; }).length;
+  var payCount = clientPaymentCount(c);
   var today = midnight(new Date());
   var nextDue = addCycles(start, payCount, cycle);
   var days = Math.round((midnight(nextDue) - today) / 86400000);
@@ -685,6 +702,13 @@ function dueBadgeClass(st){
   if(st === "ok") return "ok";
   if(st === "upcoming") return "muted";
   return "";
+}
+function paymentAmountCell(p, fee){
+  var out = money(p.amount);
+  if(fee && p.amount < fee){
+    out += " <span class='badge out' style='margin-left:6px;'>Short " + money(fee - p.amount) + "</span>";
+  }
+  return out;
 }
 function fmtDate(d){
   if(!d) return "—";
@@ -868,6 +892,15 @@ function openClientDetail(id){
   banner.style.background = colors.bg;
   banner.style.color = colors.fg;
 
+  var bal = balanceInfo(c);
+  var balBanner = document.getElementById("detailBalanceBanner");
+  if(bal.owed > 0){
+    balBanner.style.display = "block";
+    balBanner.textContent = "Paid short — " + money(bal.owed) + " still owed against what's due so far";
+  } else {
+    balBanner.style.display = "none";
+  }
+
   var urlEl = document.getElementById("detailWebAppUrl");
   if(c.webAppUrl){ urlEl.innerHTML = "<a href='" + escapeHtml(c.webAppUrl) + "' target='_blank' rel='noopener'>" + escapeHtml(c.webAppUrl) + "</a>"; }
   else { urlEl.textContent = "—"; }
@@ -882,7 +915,7 @@ function openClientDetail(id){
   var empty = document.getElementById("detailPaymentsEmpty");
   empty.style.display = clientPayments.length === 0 ? "block" : "none";
   tbody.innerHTML = clientPayments.map(function(p){
-    return "<tr><td>" + escapeHtml(p.period) + "</td><td>" + money(p.amount) + "</td><td>" +
+    return "<tr><td>" + escapeHtml(p.period) + "</td><td>" + paymentAmountCell(p, c.monthlyFee) + "</td><td>" +
       (p.paidDate||"—") + "</td><td>" + escapeHtml(p.method||"—") + "</td></tr>";
   }).join("");
 
@@ -1091,10 +1124,11 @@ function renderPayments(){
   document.getElementById("paymentsSummary").textContent = sorted.length + " payment(s) shown · Total: " + money(total);
 
   body.innerHTML = sorted.map(function(p){
+    var client = state.clients.find(function(c){ return c.id === p.clientId; });
     return "<tr>" +
       "<td>" + escapeHtml(clientName(p.clientId)) + "</td>" +
       "<td>" + escapeHtml(p.period) + "</td>" +
-      "<td>" + money(p.amount) + "</td>" +
+      "<td>" + paymentAmountCell(p, client ? client.monthlyFee : 0) + "</td>" +
       "<td>" + (p.paidDate||"—") + "</td>" +
       "<td>" + escapeHtml(p.method||"—") + "</td>" +
       "<td>" + escapeHtml(p.notes||"") + "</td>" +
