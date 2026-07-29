@@ -652,29 +652,68 @@ function parseDateStr(s){
 
 // Counts how many billing cycles have started as of today (purely from the
 // calendar grid — start date, start+1cycle, start+2cycle, ...) and finds the
-// next upcoming due point. This is independent of how many payment records
-// exist, so a top-up payment to cover a shortfall never throws off the grid.
+// next upcoming due point. Used for weekly clients only, since there's no
+// weekly "period" field to log payments against.
 function cyclesElapsed(start, cycle, today){
   if(midnight(start) > today) return { count:0, nextDue:start };
   var k = 0;
   while(midnight(addCycles(start, k+1, cycle)) <= today){ k++; }
   return { count:k+1, nextDue:addCycles(start, k+1, cycle) };
 }
+function monthKey(d){ return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); }
+function addMonths(d, n){ var r = new Date(d.getTime()); r.setMonth(r.getMonth()+n); return r; }
+// All calendar months from start's month through today's month, inclusive.
+function calendarPeriodsSoFar(start, today){
+  if(midnight(start) > midnight(today)) return [];
+  var keys = [];
+  var d = new Date(start.getFullYear(), start.getMonth(), 1);
+  var end = new Date(today.getFullYear(), today.getMonth(), 1);
+  while(d <= end){ keys.push(monthKey(d)); d = addMonths(d, 1); }
+  return keys;
+}
 
-// Compares what a client SHOULD have paid by now (cyclesElapsed * their fee)
-// against what they've actually handed over, across ALL logged payments —
-// so a top-up payment for a prior shortfall just adds to totalPaid and the
-// balance clears, without needing to match up periods or payment counts.
+// Monthly clients are judged by which MONTH a payment was logged against
+// (the period picker on Log Payment), not by comparing today's exact date
+// to the start date — so a client who's already paid for the current month
+// shows as covered even if the calendar hasn't technically reached their
+// signup day yet. A period counts as "due" if it's on the calendar grid
+// since signup, OR if a payment already exists for it (covers early/odd
+// signup dates cleanly). Weekly clients fall back to date-arithmetic since
+// there's no weekly period field to log against.
 function balanceInfo(c){
   var fee = c.monthlyFee || 0;
   var start = parseDateStr(c.startDate);
-  var today = midnight(new Date());
+  var today = new Date();
   if(!start) return { owed:0, expected:0, totalPaid:0, cycles:0, nextDue:null };
-  var ce = cyclesElapsed(start, c.billingCycle || "monthly", today);
+
+  if((c.billingCycle || "monthly") === "weekly"){
+    var ce = cyclesElapsed(start, "weekly", midnight(today));
+    var totalPaidW = state.payments.filter(function(p){ return p.clientId === c.id; })
+      .reduce(function(s,p){ return s + (p.amount||0); }, 0);
+    var expectedW = ce.count * fee;
+    return { owed: expectedW - totalPaidW, expected:expectedW, totalPaid:totalPaidW, cycles:ce.count, nextDue:ce.nextDue };
+  }
+
+  var todayKey = monthKey(today);
+  var duePeriods = {};
+  calendarPeriodsSoFar(start, today).forEach(function(k){ duePeriods[k] = true; });
+  state.payments.filter(function(p){ return p.clientId === c.id && p.period && p.period <= todayKey; })
+    .forEach(function(p){ duePeriods[p.period] = true; });
+  var periods = Object.keys(duePeriods).sort();
+
   var totalPaid = state.payments.filter(function(p){ return p.clientId === c.id; })
     .reduce(function(s,p){ return s + (p.amount||0); }, 0);
-  var expected = ce.count * fee;
-  return { owed: expected - totalPaid, expected:expected, totalPaid:totalPaid, cycles:ce.count, nextDue:ce.nextDue };
+  var expected = periods.length * fee;
+
+  var nextDue;
+  if(periods.length){
+    var lastParts = periods[periods.length-1].split("-");
+    var lastBase = new Date(+lastParts[0], +lastParts[1]-1, start.getDate());
+    nextDue = addMonths(lastBase, 1);
+  } else {
+    nextDue = start;
+  }
+  return { owed: expected - totalPaid, expected:expected, totalPaid:totalPaid, cycles:periods.length, nextDue:nextDue };
 }
 
 // Returns { state, days, nextDue, label, cycle, owed } where state is one of:
@@ -693,7 +732,7 @@ function dueInfo(c){
   var daysToNext = Math.round((midnight(bal.nextDue) - today) / 86400000);
 
   if(bal.owed > 0){
-    var lastDue = addCycles(start, Math.max(bal.cycles - 1, 0), cycle);
+    var lastDue = addCycles(bal.nextDue, -1, cycle);
     var daysLate = Math.round((today - midnight(lastDue)) / 86400000);
     var lbl = (bal.totalPaid === 0 ? "Never paid — " : "Overdue — ") + money(bal.owed) + " short";
     if(daysLate > 0) lbl += " (" + daysLate + " day" + (daysLate===1?"":"s") + " late)";
