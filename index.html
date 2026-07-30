@@ -88,11 +88,16 @@
   #receiptContent .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #999;font-size:14px;color:#000;}
   #receiptContent .row span:first-child{color:#333;}
   @media print{
-    body *{visibility:hidden;}
-    #receiptContent, #receiptContent *{visibility:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
+    /* display:none removes these from layout entirely — unlike
+       visibility:hidden, which was leaving their full height reserved and
+       pushing the receipt onto extra blank pages / off to one side. */
+    #sidebar, header, .view, .modal-overlay:not(#receiptOverlay){display:none !important;}
+    #receiptContent, #receiptContent *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
     #receiptOverlay{position:static !important;background:none !important;height:auto !important;min-height:0 !important;display:block !important;}
     #receiptOverlay .modal{position:static !important;width:100% !important;max-width:100% !important;padding:0 !important;background:none !important;box-shadow:none !important;}
-    #receiptContent{position:relative;left:auto;top:auto;width:100%;max-width:600px;margin:0 auto;box-shadow:none;page-break-inside:avoid;break-inside:avoid;}
+    #receiptContent{position:relative;left:auto;top:auto;width:100%;max-width:100%;margin:0 auto;box-shadow:none;page-break-inside:avoid;break-inside:avoid;}
+    #receiptHeader{padding:28px 24px 22px;}
+    #receiptBody{padding:28px;}
     .no-print{display:none !important;}
     @page{margin:10mm;}
   }
@@ -455,8 +460,8 @@
 
               <div style="text-align:center;margin:22px 0 6px;padding:16px;border:2px solid #000;border-radius:10px;background:#f5f5f5;">
                 <div style="font-size:22px;">🙏</div>
-                <p style="margin:6px 0 0;font-size:15px;font-weight:700;color:#000;">Thank you for your payment!</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#333;">We truly appreciate your trust and continued partnership with us.</p>
+                <p style="margin:6px 0 0;font-size:15px;font-weight:700;color:#000;" id="receiptThanksTitle">Thank you for your payment!</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#333;" id="receiptThanksSubtitle">We truly appreciate your trust and continued partnership with us.</p>
               </div>
 
               <p style="margin-top:14px;font-size:11px;color:#555;text-align:center;">Printed on <span id="receiptPrintedOn"></span> · Receipt ID: <span id="receiptId"></span></p>
@@ -1543,6 +1548,8 @@ function resetReceiptChrome(){
   document.getElementById("receiptPeriodLabel").textContent = "Period Covered";
   document.getElementById("receiptMethodLabel").textContent = "Method";
   document.getElementById("receiptExtraRow").style.display = "none";
+  document.getElementById("receiptThanksTitle").textContent = "Thank you for your payment!";
+  document.getElementById("receiptThanksSubtitle").textContent = "We truly appreciate your trust and continued partnership with us.";
 }
 
 function showReceipt(paymentId){
@@ -1651,6 +1658,8 @@ function showEmployeeReceipt(paymentId){
   document.getElementById("receiptNotes").textContent = p.notes || "—";
   document.getElementById("receiptInstallments").style.display = "none";
   document.getElementById("receiptStatusNote").style.display = "none";
+  document.getElementById("receiptThanksTitle").textContent = "Thank you for your hard work!";
+  document.getElementById("receiptThanksSubtitle").textContent = "We appreciate your dedication and contribution to the team.";
 
   document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
   document.getElementById("receiptId").textContent = p.id;
@@ -1688,6 +1697,8 @@ function showEmployeeMonthReceipt(employeeId, period){
   }).join("");
   document.getElementById("receiptInstallments").style.display = "block";
   document.getElementById("receiptStatusNote").style.display = "none";
+  document.getElementById("receiptThanksTitle").textContent = "Thank you for your hard work!";
+  document.getElementById("receiptThanksSubtitle").textContent = "We appreciate your dedication and contribution to the team.";
 
   document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
   document.getElementById("receiptId").textContent = employeeId + "-" + period;
