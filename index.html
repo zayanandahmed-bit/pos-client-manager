@@ -92,11 +92,9 @@
     #receiptContent, #receiptContent *{visibility:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
     #receiptOverlay{position:static !important;background:none !important;height:auto !important;min-height:0 !important;display:block !important;}
     #receiptOverlay .modal{position:static !important;width:100% !important;max-width:100% !important;padding:0 !important;background:none !important;box-shadow:none !important;}
-    #receiptContent{position:relative;left:auto;top:auto;width:100%;max-width:720px;margin:0 auto;box-shadow:none;font-size:1.15em;}
-    #receiptHeader{padding:32px 24px 24px;}
-    #receiptBody{padding:32px;}
+    #receiptContent{position:relative;left:auto;top:auto;width:100%;max-width:600px;margin:0 auto;box-shadow:none;page-break-inside:avoid;break-inside:avoid;}
     .no-print{display:none !important;}
-    @page{margin:14mm;}
+    @page{margin:10mm;}
   }
 </style>
 </head>
@@ -397,16 +395,24 @@
           <div class="panel" style="background:var(--bg-alt,#f8f9fb);padding:12px;margin-bottom:12px;">
             <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Log a payment to this employee</div>
             <div class="grid grid-3">
+              <div><label>Month</label><input type="month" id="empPayPeriod"></div>
               <div><label>Amount (PKR)</label><input type="number" id="empPayAmount" min="0" step="100"></div>
               <div><label>Paid Date</label><input type="date" id="empPayDate"></div>
+            </div>
+            <div class="grid grid-3" style="margin-top:10px;">
+              <div><label>Method</label>
+                <select id="empPayMethod">
+                  <option>Cash</option><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>Other</option>
+                </select>
+              </div>
               <div><label>Type</label>
                 <select id="empPayType"><option value="salary">Salary</option><option value="commission">Commission</option></select>
               </div>
-            </div>
-            <div class="grid grid-3" style="margin-top:10px;">
               <div><label>Client Landed (optional)</label>
                 <select id="empPayClient"><option value="">— not tied to a client —</option></select>
               </div>
+            </div>
+            <div class="grid grid-2" style="margin-top:10px;">
               <div><label>Notes</label><input id="empPayNotes" placeholder="Optional"></div>
               <div style="display:flex;align-items:flex-end;">
                 <button class="btn green" id="empPaySaveBtn" style="width:100%;">Log Payment</button>
@@ -414,7 +420,7 @@
             </div>
           </div>
           <table>
-            <thead><tr><th>Amount</th><th>Paid Date</th><th>Type</th><th>Client Landed</th><th>Notes</th><th></th></tr></thead>
+            <thead><tr><th>Period</th><th>Total Paid</th><th>Payments</th><th></th></tr></thead>
             <tbody id="empDetailPaymentsBody"></tbody>
           </table>
           <div id="empDetailPaymentsEmpty" class="empty" style="display:none;">No payments logged to this employee yet.</div>
@@ -427,20 +433,21 @@
           <div id="receiptContent">
             <div id="receiptHeader">
               <div style="font-size:32px;line-height:1;">🧾</div>
-              <h2 style="margin:8px 0 2px;letter-spacing:.5px;">PAYMENT RECEIPT</h2>
-              <p style="margin:0;font-size:13px;opacity:.9;">POS Software Subscription</p>
+              <h2 style="margin:8px 0 2px;letter-spacing:.5px;" id="receiptTitle">PAYMENT RECEIPT</h2>
+              <p style="margin:0;font-size:13px;opacity:.9;" id="receiptSubtitle">POS Software Subscription</p>
             </div>
             <div id="receiptBody">
               <p style="margin:0 0 14px;font-size:15px;font-weight:700;" id="receiptSubline">—</p>
-              <div class="row"><span>Owner</span><span id="receiptOwner">—</span></div>
-              <div class="row"><span>Period Covered</span><span id="receiptPeriod">—</span></div>
+              <div class="row"><span id="receiptOwnerLabel">Owner</span><span id="receiptOwner">—</span></div>
+              <div class="row"><span id="receiptPeriodLabel">Period Covered</span><span id="receiptPeriod">—</span></div>
               <div class="row" style="background:#eee;margin:0 -20px;padding:10px 20px;border-top:2px solid #000;border-bottom:2px solid #000;">
                 <span style="font-weight:700;color:#000;" id="receiptAmountLabel">Amount Paid</span><span id="receiptAmount" style="font-weight:700;color:#000;font-size:16px;">—</span>
               </div>
               <div class="row" id="receiptPaidDateRow"><span>Paid Date</span><span id="receiptPaidDate">—</span></div>
-              <div class="row" id="receiptMethodRow"><span>Method</span><span id="receiptMethod">—</span></div>
+              <div class="row" id="receiptMethodRow"><span id="receiptMethodLabel">Method</span><span id="receiptMethod">—</span></div>
+              <div class="row" id="receiptExtraRow" style="display:none;"><span id="receiptExtraLabel">Client Landed</span><span id="receiptExtra">—</span></div>
               <div id="receiptInstallments" style="display:none;">
-                <div style="font-size:12px;font-weight:700;color:#000;margin:12px 0 4px;">Payments making up this month</div>
+                <div style="font-size:12px;font-weight:700;color:#000;margin:12px 0 4px;" id="receiptInstallmentsLabel">Payments making up this month</div>
                 <div id="receiptInstallmentsList"></div>
               </div>
               <div class="row"><span>Notes</span><span id="receiptNotes">—</span></div>
@@ -667,6 +674,18 @@ function paymentEntryRow(p){
     "<span style='display:flex;gap:6px;flex-shrink:0;'>" +
       "<button class='btn secondary small' onclick='CRM.showReceipt(\"" + p.id + "\")'>Receipt</button>" +
       "<button class='btn danger small' onclick='CRM.deletePayment(\"" + p.id + "\")'>Delete</button>" +
+    "</span>" +
+  "</div>";
+}
+// Same row layout, for a payment made TO an employee instead of one FROM a client.
+function employeePaymentEntryRow(p){
+  var landedClient = p.clientId ? state.clients.find(function(c){ return c.id === p.clientId; }) : null;
+  var tag = (p.payType === "commission" ? "Commission" : "Salary") + " · " + (p.method||"—") + (landedClient ? " · " + landedClient.storeName : "");
+  return "<div style='display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;'>" +
+    "<span>" + money(p.amount) + " on " + (p.paidDate||"—") + " (" + escapeHtml(tag) + ")</span>" +
+    "<span style='display:flex;gap:6px;flex-shrink:0;'>" +
+      "<button class='btn secondary small' onclick='CRM.showEmployeeReceipt(\"" + p.id + "\")'>Receipt</button>" +
+      "<button class='btn danger small' onclick='CRM.deleteEmployeePayment(\"" + p.id + "\")'>Delete</button>" +
     "</span>" +
   "</div>";
 }
@@ -1329,29 +1348,37 @@ function openEmployeeDetail(id){
     state.clients.slice().sort(function(a,b){ return (a.storeName||"").localeCompare(b.storeName||""); })
       .map(function(c){ return "<option value='" + c.id + "'>" + escapeHtml(c.storeName) + "</option>"; }).join("");
   clientSel.value = currentClientSel || "";
+  document.getElementById("empPayPeriod").value = monthKey(new Date());
   document.getElementById("empPayAmount").value = "";
   document.getElementById("empPayDate").value = new Date().toISOString().slice(0,10);
+  document.getElementById("empPayMethod").value = "Cash";
   document.getElementById("empPayType").value = "salary";
   document.getElementById("empPayNotes").value = "";
 
-  var empPayments = state.employeePayments.filter(function(p){ return p.employeeId === id; })
-    .sort(function(a,b){ return (b.paidDate||"").localeCompare(a.paidDate||""); });
+  var empPayments = state.employeePayments.filter(function(p){ return p.employeeId === id; });
   var totalPaidToEmp = empPayments.reduce(function(s,p){ return s + (p.amount||0); }, 0);
   document.getElementById("empDetailTotalPaid").textContent = money(totalPaidToEmp);
 
   var payBody = document.getElementById("empDetailPaymentsBody");
   var payEmpty = document.getElementById("empDetailPaymentsEmpty");
   payEmpty.style.display = empPayments.length === 0 ? "block" : "none";
-  payBody.innerHTML = empPayments.map(function(p){
-    var landedClient = p.clientId ? state.clients.find(function(c){ return c.id === p.clientId; }) : null;
-    return "<tr>" +
-      "<td>" + money(p.amount) + "</td>" +
-      "<td>" + (p.paidDate||"—") + "</td>" +
-      "<td>" + (p.payType === "commission" ? "Commission" : "Salary") + "</td>" +
-      "<td>" + (landedClient ? escapeHtml(landedClient.storeName) : "—") + "</td>" +
-      "<td>" + escapeHtml(p.notes||"") + "</td>" +
-      "<td><button class='btn danger small' onclick='CRM.deleteEmployeePayment(\"" + p.id + "\")'>Delete</button></td>" +
-    "</tr>";
+
+  var empByPeriod = {};
+  empPayments.forEach(function(p){
+    var key = p.period || "(no period)";
+    if(!empByPeriod[key]) empByPeriod[key] = [];
+    empByPeriod[key].push(p);
+  });
+  var empPeriodKeys = Object.keys(empByPeriod).sort().reverse();
+  payBody.innerHTML = empPeriodKeys.map(function(key){
+    var entries = empByPeriod[key];
+    var periodTotal = entries.reduce(function(s,p){ return s + (p.amount||0); }, 0);
+    var entriesHtml = entries.slice().sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); })
+      .map(employeePaymentEntryRow).join("");
+    var actionsHtml = key === "(no period)" ? "" :
+      "<button class='btn secondary small' onclick='CRM.prefillEmployeeQuickPay(\"" + key + "\")'>Add</button> " +
+      "<button class='btn secondary small' onclick='CRM.showEmployeeMonthReceipt(\"" + id + "\",\"" + key + "\")'>Full Receipt</button>";
+    return "<tr><td>" + escapeHtml(key) + "</td><td>" + money(periodTotal) + "</td><td style='font-size:12px;color:var(--muted);min-width:280px;'>" + entriesHtml + "</td><td style='white-space:nowrap;'>" + actionsHtml + "</td></tr>";
   }).join("");
 
   document.getElementById("employeeDetailOverlay").classList.add("show");
@@ -1371,13 +1398,22 @@ document.getElementById("empDetailDeleteBtn").addEventListener("click", function
   if(currentDetailEmployeeId) deleteEmployee(currentDetailEmployeeId);
 });
 
+function prefillEmployeeQuickPay(period){
+  document.getElementById("empPayPeriod").value = period;
+  document.getElementById("empPayAmount").focus();
+  document.getElementById("empPayAmount").scrollIntoView({ behavior:"smooth", block:"center" });
+}
+
 document.getElementById("empPaySaveBtn").addEventListener("click", function(){
   if(!currentDetailEmployeeId) return;
+  var period = document.getElementById("empPayPeriod").value;
   var amount = parseFloat(document.getElementById("empPayAmount").value);
+  if(!period){ toast("Pick which month this payment covers."); return; }
   if(isNaN(amount) || amount <= 0){ toast("Enter a valid amount."); return; }
   state.employeePayments.push({
-    id: uid(), employeeId: currentDetailEmployeeId, amount: amount,
+    id: uid(), employeeId: currentDetailEmployeeId, period: period, amount: amount,
     paidDate: document.getElementById("empPayDate").value,
+    method: document.getElementById("empPayMethod").value,
     clientId: document.getElementById("empPayClient").value,
     payType: document.getElementById("empPayType").value,
     notes: document.getElementById("empPayNotes").value.trim()
@@ -1497,11 +1533,24 @@ function deletePayment(id){
 }
 
 // ================= RECEIPT =================
+// Resets the shared receipt modal's chrome (title, labels, extra row) back
+// to its client-payment defaults — every show*Receipt function calls this
+// first so labels never leak in from whichever receipt type was shown last.
+function resetReceiptChrome(){
+  document.getElementById("receiptTitle").textContent = "PAYMENT RECEIPT";
+  document.getElementById("receiptSubtitle").textContent = "POS Software Subscription";
+  document.getElementById("receiptOwnerLabel").textContent = "Owner";
+  document.getElementById("receiptPeriodLabel").textContent = "Period Covered";
+  document.getElementById("receiptMethodLabel").textContent = "Method";
+  document.getElementById("receiptExtraRow").style.display = "none";
+}
+
 function showReceipt(paymentId){
   var p = state.payments.find(function(x){ return x.id === paymentId; });
   if(!p) return;
   var client = state.clients.find(function(c){ return c.id === p.clientId; });
   var fee = client ? (client.monthlyFee||0) : 0;
+  resetReceiptChrome();
 
   document.getElementById("receiptSubline").textContent = client ? client.storeName : "(deleted client)";
   document.getElementById("receiptOwner").textContent = (client && client.ownerName) || "—";
@@ -1539,6 +1588,8 @@ function showMonthReceipt(clientId, period){
     .sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); });
   var total = entries.reduce(function(s,p){ return s + (p.amount||0); }, 0);
   var fee = client.monthlyFee || 0;
+  resetReceiptChrome();
+  document.getElementById("receiptInstallmentsLabel").textContent = "Payments making up this month";
 
   document.getElementById("receiptSubline").textContent = client.storeName;
   document.getElementById("receiptOwner").textContent = client.ownerName || "—";
@@ -1566,6 +1617,80 @@ function showMonthReceipt(clientId, period){
 
   document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
   document.getElementById("receiptId").textContent = clientId + "-" + period;
+  document.getElementById("receiptOverlay").classList.add("show");
+}
+
+// Single-transaction receipt for a payment made TO an employee. Reuses the
+// same modal as client receipts but relabels Owner->Role, Method->Type, and
+// shows a "Client Landed" row instead — there's no fee to compare against,
+// so no partial/short badge here.
+function showEmployeeReceipt(paymentId){
+  var p = state.employeePayments.find(function(x){ return x.id === paymentId; });
+  if(!p) return;
+  var emp = state.employees.find(function(e){ return e.id === p.employeeId; });
+  var landedClient = p.clientId ? state.clients.find(function(c){ return c.id === p.clientId; }) : null;
+  resetReceiptChrome();
+
+  document.getElementById("receiptTitle").textContent = "PAYOUT RECEIPT";
+  document.getElementById("receiptSubtitle").textContent = "Employee Payment";
+  document.getElementById("receiptSubline").textContent = emp ? emp.name : "(deleted employee)";
+  document.getElementById("receiptOwnerLabel").textContent = "Role";
+  document.getElementById("receiptOwner").textContent = (emp && emp.role) || "—";
+  document.getElementById("receiptPeriodLabel").textContent = "Period";
+  document.getElementById("receiptPeriod").textContent = p.period || "—";
+  document.getElementById("receiptAmountLabel").textContent = "Amount Paid";
+  document.getElementById("receiptAmount").textContent = money(p.amount);
+  document.getElementById("receiptPaidDateRow").style.display = "";
+  document.getElementById("receiptPaidDate").textContent = p.paidDate || "—";
+  document.getElementById("receiptMethodRow").style.display = "";
+  document.getElementById("receiptMethodLabel").textContent = "Type";
+  document.getElementById("receiptMethod").textContent = p.payType === "commission" ? "Commission" : "Salary";
+  document.getElementById("receiptExtraRow").style.display = "";
+  document.getElementById("receiptExtraLabel").textContent = "Client Landed";
+  document.getElementById("receiptExtra").textContent = landedClient ? landedClient.storeName : "—";
+  document.getElementById("receiptNotes").textContent = p.notes || "—";
+  document.getElementById("receiptInstallments").style.display = "none";
+  document.getElementById("receiptStatusNote").style.display = "none";
+
+  document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
+  document.getElementById("receiptId").textContent = p.id;
+  document.getElementById("receiptOverlay").classList.add("show");
+}
+
+// Combined receipt for every payment logged to one employee in one month.
+function showEmployeeMonthReceipt(employeeId, period){
+  var emp = state.employees.find(function(e){ return e.id === employeeId; });
+  if(!emp) return;
+  var entries = state.employeePayments.filter(function(p){ return p.employeeId === employeeId && (p.period || "(no period)") === period; })
+    .sort(function(a,b){ return (a.paidDate||"").localeCompare(b.paidDate||""); });
+  var total = entries.reduce(function(s,p){ return s + (p.amount||0); }, 0);
+  resetReceiptChrome();
+
+  document.getElementById("receiptTitle").textContent = "PAYOUT RECEIPT";
+  document.getElementById("receiptSubtitle").textContent = "Employee Payment";
+  document.getElementById("receiptSubline").textContent = emp.name;
+  document.getElementById("receiptOwnerLabel").textContent = "Role";
+  document.getElementById("receiptOwner").textContent = emp.role || "—";
+  document.getElementById("receiptPeriodLabel").textContent = "Period";
+  document.getElementById("receiptPeriod").textContent = period;
+  document.getElementById("receiptAmountLabel").textContent = "Total Paid";
+  document.getElementById("receiptAmount").textContent = money(total);
+  document.getElementById("receiptPaidDateRow").style.display = "none";
+  document.getElementById("receiptMethodRow").style.display = "none";
+  document.getElementById("receiptExtraRow").style.display = "none";
+  document.getElementById("receiptNotes").textContent = entries.length + " payment" + (entries.length===1?"":"s") + " logged for this month";
+  document.getElementById("receiptInstallmentsLabel").textContent = "Payments making up this month";
+
+  document.getElementById("receiptInstallmentsList").innerHTML = entries.map(function(p){
+    var landedClient = p.clientId ? state.clients.find(function(c){ return c.id === p.clientId; }) : null;
+    var tag = (p.payType === "commission" ? "Commission" : "Salary") + (landedClient ? " — " + landedClient.storeName : "");
+    return "<div class='row'><span>" + (p.paidDate||"—") + " (" + escapeHtml(tag) + ")</span><span>" + money(p.amount) + "</span></div>";
+  }).join("");
+  document.getElementById("receiptInstallments").style.display = "block";
+  document.getElementById("receiptStatusNote").style.display = "none";
+
+  document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
+  document.getElementById("receiptId").textContent = employeeId + "-" + period;
   document.getElementById("receiptOverlay").classList.add("show");
 }
 function closeReceipt(){
@@ -1859,7 +1984,9 @@ window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
   editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail,
   openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay, showReceipt: showReceipt,
-  showMonthReceipt: showMonthReceipt, deleteEmployeePayment: deleteEmployeePayment
+  showMonthReceipt: showMonthReceipt, deleteEmployeePayment: deleteEmployeePayment,
+  showEmployeeReceipt: showEmployeeReceipt, showEmployeeMonthReceipt: showEmployeeMonthReceipt,
+  prefillEmployeeQuickPay: prefillEmployeeQuickPay
 };
 
 // ================= BOOT =================

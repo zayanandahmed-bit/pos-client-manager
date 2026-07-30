@@ -77,15 +77,19 @@ create index if not exists idx_crm_clients_employee_id on crm_clients(employee_i
 create table if not exists crm_employee_payments (
   id text primary key,
   employee_id text not null,
+  period text default '', -- e.g. '2026-07' — which month this payout covers, mirrors crm_payments
   amount numeric default 0,
   paid_date date,
+  method text default '', -- Cash | Bank Transfer | JazzCash | EasyPaisa | Other
   client_id text default '', -- optional — which client this payout relates to, if any
   pay_type text default 'salary', -- salary | commission
   notes text default ''
 );
 
--- Safe to re-run — no-op if the column already exists.
+-- Safe to re-run — no-op if the columns already exist.
 alter table crm_employee_payments add column if not exists pay_type text default 'salary';
+alter table crm_employee_payments add column if not exists period text default '';
+alter table crm_employee_payments add column if not exists method text default '';
 
 create index if not exists idx_crm_employee_payments_employee_id on crm_employee_payments(employee_id);
 
@@ -125,8 +129,8 @@ begin
     )) from crm_employees), '[]'::jsonb),
 
     'employeePayments', coalesce((select jsonb_agg(jsonb_build_object(
-      'id', id, 'employeeId', employee_id, 'amount', amount, 'paidDate', paid_date,
-      'clientId', client_id, 'payType', pay_type, 'notes', notes
+      'id', id, 'employeeId', employee_id, 'period', period, 'amount', amount, 'paidDate', paid_date,
+      'method', method, 'clientId', client_id, 'payType', pay_type, 'notes', notes
     )) from crm_employee_payments), '[]'::jsonb)
   ) into result;
   return result;
@@ -208,9 +212,10 @@ set search_path = public
 as $$
 begin
   delete from crm_employee_payments where true;
-  insert into crm_employee_payments (id, employee_id, amount, paid_date, client_id, pay_type, notes)
-  select x->>'id', x->>'employeeId', coalesce((x->>'amount')::numeric,0),
-         nullif(x->>'paidDate','')::date, coalesce(x->>'clientId',''), coalesce(x->>'payType','salary'), coalesce(x->>'notes','')
+  insert into crm_employee_payments (id, employee_id, period, amount, paid_date, method, client_id, pay_type, notes)
+  select x->>'id', x->>'employeeId', coalesce(x->>'period',''), coalesce((x->>'amount')::numeric,0),
+         nullif(x->>'paidDate','')::date, coalesce(x->>'method',''), coalesce(x->>'clientId',''),
+         coalesce(x->>'payType','salary'), coalesce(x->>'notes','')
   from jsonb_array_elements("employeePayments") x;
 end;
 $$;
