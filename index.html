@@ -1382,12 +1382,15 @@ function editEmployee(id){
   window.scrollTo(0,0);
 }
 function deleteEmployee(id){
-  if(!confirm("Delete this employee? Clients they signed will show \"(deleted employee)\" unless you reassign them first.")) return;
+  if(!confirm("Delete this employee? Clients they signed will show \"(deleted employee)\" unless you reassign them first. Their logged payment records will be deleted too.")) return;
   state.employees = state.employees.filter(function(x){ return x.id !== id; });
+  state.employeePayments = state.employeePayments.filter(function(p){ return p.employeeId !== id; });
   saveEmployees();
+  saveEmployeePayments();
   closeEmployeeDetail();
   renderEmployees();
   renderDashboard();
+  renderFinancials();
   toast("Employee deleted.");
 }
 
@@ -1503,6 +1506,7 @@ document.getElementById("empPaySaveBtn").addEventListener("click", function(){
   });
   saveEmployeePayments();
   openEmployeeDetail(currentDetailEmployeeId);
+  renderFinancials();
   toast("Payment logged.");
 });
 function deleteEmployeePayment(id){
@@ -1510,6 +1514,7 @@ function deleteEmployeePayment(id){
   state.employeePayments = state.employeePayments.filter(function(p){ return p.id !== id; });
   saveEmployeePayments();
   if(currentDetailEmployeeId) openEmployeeDetail(currentDetailEmployeeId);
+  renderFinancials();
   toast("Payment deleted.");
 }
 
