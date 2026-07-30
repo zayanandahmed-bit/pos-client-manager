@@ -190,6 +190,12 @@ $$;
 -- the "employeePayments" JSON key the app actually sends and break PostgREST's
 -- RPC parameter matching (as happened here — same reason every OTHER sync
 -- function below gets away with an unquoted name: they're already all-lowercase).
+-- Postgres refuses to rename a parameter via CREATE OR REPLACE, so if an
+-- earlier version of this function already exists with the old parameter
+-- name, it has to be dropped first — safe to re-run, this is a no-op if the
+-- function doesn't exist yet.
+drop function if exists sync_replace_crm_employee_payments(jsonb);
+
 create or replace function sync_replace_crm_employee_payments("employeePayments" jsonb)
 returns void
 language plpgsql
