@@ -81,11 +81,11 @@
   .modal-overlay.show{display:flex;}
   .modal{background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;}
 
-  #receiptContent{font-family:inherit;background:#fff;border:2px solid #1f2937;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08);
+  #receiptContent{font-family:inherit;background:#fff;color:#000;border:2px solid #000;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08);
     -webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
-  #receiptHeader{background:linear-gradient(135deg,#1f2937,#374151);color:#fff;text-align:center;padding:20px 20px 16px;}
+  #receiptHeader{background:#1a1a1a;color:#fff;text-align:center;padding:20px 20px 16px;}
   #receiptBody{padding:20px;}
-  #receiptContent .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ccc;font-size:14px;}
+  #receiptContent .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #999;font-size:14px;color:#000;}
   #receiptContent .row span:first-child{color:#333;}
   @media print{
     body *{visibility:hidden;}
@@ -389,6 +389,31 @@
             <tbody id="empDetailClientsBody"></tbody>
           </table>
           <div id="empDetailClientsEmpty" class="empty" style="display:none;">Hasn't signed any clients yet.</div>
+
+          <div class="flex-between" style="margin:20px 0 10px;">
+            <h3 style="margin:0;">Payments to This Employee</h3>
+            <span style="font-size:13px;color:var(--muted);">Total paid: <b id="empDetailTotalPaid">Rs 0</b></span>
+          </div>
+          <div class="panel" style="background:var(--bg-alt,#f8f9fb);padding:12px;margin-bottom:12px;">
+            <div class="grid grid-3">
+              <div><label>Amount (PKR)</label><input type="number" id="empPayAmount" min="0" step="100"></div>
+              <div><label>Paid Date</label><input type="date" id="empPayDate"></div>
+              <div><label>Client Landed (optional)</label>
+                <select id="empPayClient"><option value="">— not tied to a client —</option></select>
+              </div>
+            </div>
+            <div class="grid grid-2" style="margin-top:10px;">
+              <div><label>Notes</label><input id="empPayNotes" placeholder="Optional"></div>
+              <div style="display:flex;align-items:flex-end;">
+                <button class="btn green" id="empPaySaveBtn" style="width:100%;">Log Payment</button>
+              </div>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Amount</th><th>Paid Date</th><th>Client Landed</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="empDetailPaymentsBody"></tbody>
+          </table>
+          <div id="empDetailPaymentsEmpty" class="empty" style="display:none;">No payments logged to this employee yet.</div>
         </div>
       </div>
 
@@ -405,26 +430,26 @@
               <p style="margin:0 0 14px;font-size:15px;font-weight:700;" id="receiptSubline">—</p>
               <div class="row"><span>Owner</span><span id="receiptOwner">—</span></div>
               <div class="row"><span>Period Covered</span><span id="receiptPeriod">—</span></div>
-              <div class="row" style="background:#f0fdf4;margin:0 -20px;padding:10px 20px;border-bottom:2px solid #dcfce7;">
-                <span style="font-weight:700;" id="receiptAmountLabel">Amount Paid</span><span id="receiptAmount" style="font-weight:700;color:#166534;font-size:16px;">—</span>
+              <div class="row" style="background:#eee;margin:0 -20px;padding:10px 20px;border-top:2px solid #000;border-bottom:2px solid #000;">
+                <span style="font-weight:700;color:#000;" id="receiptAmountLabel">Amount Paid</span><span id="receiptAmount" style="font-weight:700;color:#000;font-size:16px;">—</span>
               </div>
               <div class="row" id="receiptPaidDateRow"><span>Paid Date</span><span id="receiptPaidDate">—</span></div>
               <div class="row" id="receiptMethodRow"><span>Method</span><span id="receiptMethod">—</span></div>
               <div id="receiptInstallments" style="display:none;">
-                <div style="font-size:12px;font-weight:700;color:#1f2937;margin:12px 0 4px;">Payments making up this month</div>
+                <div style="font-size:12px;font-weight:700;color:#000;margin:12px 0 4px;">Payments making up this month</div>
                 <div id="receiptInstallmentsList"></div>
               </div>
               <div class="row"><span>Notes</span><span id="receiptNotes">—</span></div>
-              <div id="receiptStatusNote" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:700;border:2px solid;"></div>
+              <div id="receiptStatusNote" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:700;border:2px solid #000;background:#eee;color:#000;"></div>
 
-              <div style="text-align:center;margin:22px 0 6px;padding:16px;border:2px solid #166534;border-radius:10px;background:#f0fdf4;">
+              <div style="text-align:center;margin:22px 0 6px;padding:16px;border:2px solid #000;border-radius:10px;background:#f5f5f5;">
                 <div style="font-size:22px;">🙏</div>
-                <p style="margin:6px 0 0;font-size:15px;font-weight:700;color:#166534;">Thank you for your payment!</p>
-                <p style="margin:4px 0 0;font-size:12px;color:#166534;">We truly appreciate your trust and continued partnership with us.</p>
+                <p style="margin:6px 0 0;font-size:15px;font-weight:700;color:#000;">Thank you for your payment!</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#333;">We truly appreciate your trust and continued partnership with us.</p>
               </div>
 
-              <p style="margin-top:14px;font-size:11px;color:var(--muted);text-align:center;">Printed on <span id="receiptPrintedOn"></span> · Receipt ID: <span id="receiptId"></span></p>
-              <p style="margin-top:2px;font-size:11px;color:var(--muted);text-align:center;">This is a computer-generated receipt.</p>
+              <p style="margin-top:14px;font-size:11px;color:#555;text-align:center;">Printed on <span id="receiptPrintedOn"></span> · Receipt ID: <span id="receiptId"></span></p>
+              <p style="margin-top:2px;font-size:11px;color:#555;text-align:center;">This is a computer-generated receipt.</p>
             </div>
           </div>
           <div class="row no-print" style="margin-top:18px;">
@@ -598,12 +623,13 @@ var state = {
   clients: [],
   payments: [],
   employees: [],
+  employeePayments: [],
   cloud: { url: BUILT_IN_SUPABASE_URL, secret: BUILT_IN_SUPABASE_ANON_KEY, enabled: true, lastSync: null }
 };
 
 var LOCAL_STORAGE_KEY = "crmDashboard_localState_v1";
 function saveLocalState(){
-  try{ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ clients: state.clients, payments: state.payments, employees: state.employees })); }catch(e){}
+  try{ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ clients: state.clients, payments: state.payments, employees: state.employees, employeePayments: state.employeePayments })); }catch(e){}
 }
 function loadLocalState(){
   try{
@@ -613,6 +639,7 @@ function loadLocalState(){
     if(data.clients) state.clients = data.clients;
     if(data.payments) state.payments = data.payments;
     if(data.employees) state.employees = data.employees;
+    if(data.employeePayments) state.employeePayments = data.employeePayments;
     return true;
   }catch(e){ return false; }
 }
@@ -664,7 +691,7 @@ function setCloudStatus(kind, detail){
 
 var domainTimers = {};
 var domainInFlight = {};
-var DOMAIN_RPC = { clients: "sync_replace_crm_clients", payments: "sync_replace_crm_payments", employees: "sync_replace_crm_employees" };
+var DOMAIN_RPC = { clients: "sync_replace_crm_clients", payments: "sync_replace_crm_payments", employees: "sync_replace_crm_employees", employeePayments: "sync_replace_crm_employee_payments" };
 
 function pushDomainInstant(domain){
   dirty[domain] = true;
@@ -707,11 +734,13 @@ function applyCloudData(data){
   if(data.clients) state.clients = data.clients;
   if(data.payments) state.payments = data.payments;
   if(data.employees) state.employees = data.employees;
+  if(data.employeePayments) state.employeePayments = data.employeePayments;
 }
 
 function saveClients(){ saveLocalState(); pushDomainInstant("clients"); }
 function savePayments(){ saveLocalState(); pushDomainInstant("payments"); }
 function saveEmployees(){ saveLocalState(); pushDomainInstant("employees"); }
+function saveEmployeePayments(){ saveLocalState(); pushDomainInstant("employeePayments"); }
 
 // ================= NAV =================
 var VIEW_META = {
@@ -1290,6 +1319,35 @@ function openEmployeeDetail(id){
     "</tr>";
   }).join("");
 
+  var clientSel = document.getElementById("empPayClient");
+  var currentClientSel = clientSel.value;
+  clientSel.innerHTML = "<option value=''>— not tied to a client —</option>" +
+    state.clients.slice().sort(function(a,b){ return (a.storeName||"").localeCompare(b.storeName||""); })
+      .map(function(c){ return "<option value='" + c.id + "'>" + escapeHtml(c.storeName) + "</option>"; }).join("");
+  clientSel.value = currentClientSel || "";
+  document.getElementById("empPayAmount").value = "";
+  document.getElementById("empPayDate").value = new Date().toISOString().slice(0,10);
+  document.getElementById("empPayNotes").value = "";
+
+  var empPayments = state.employeePayments.filter(function(p){ return p.employeeId === id; })
+    .sort(function(a,b){ return (b.paidDate||"").localeCompare(a.paidDate||""); });
+  var totalPaidToEmp = empPayments.reduce(function(s,p){ return s + (p.amount||0); }, 0);
+  document.getElementById("empDetailTotalPaid").textContent = money(totalPaidToEmp);
+
+  var payBody = document.getElementById("empDetailPaymentsBody");
+  var payEmpty = document.getElementById("empDetailPaymentsEmpty");
+  payEmpty.style.display = empPayments.length === 0 ? "block" : "none";
+  payBody.innerHTML = empPayments.map(function(p){
+    var landedClient = p.clientId ? state.clients.find(function(c){ return c.id === p.clientId; }) : null;
+    return "<tr>" +
+      "<td>" + money(p.amount) + "</td>" +
+      "<td>" + (p.paidDate||"—") + "</td>" +
+      "<td>" + (landedClient ? escapeHtml(landedClient.storeName) : "—") + "</td>" +
+      "<td>" + escapeHtml(p.notes||"") + "</td>" +
+      "<td><button class='btn danger small' onclick='CRM.deleteEmployeePayment(\"" + p.id + "\")'>Delete</button></td>" +
+    "</tr>";
+  }).join("");
+
   document.getElementById("employeeDetailOverlay").classList.add("show");
 }
 function closeEmployeeDetail(){
@@ -1306,6 +1364,28 @@ document.getElementById("empDetailEditBtn").addEventListener("click", function()
 document.getElementById("empDetailDeleteBtn").addEventListener("click", function(){
   if(currentDetailEmployeeId) deleteEmployee(currentDetailEmployeeId);
 });
+
+document.getElementById("empPaySaveBtn").addEventListener("click", function(){
+  if(!currentDetailEmployeeId) return;
+  var amount = parseFloat(document.getElementById("empPayAmount").value);
+  if(isNaN(amount) || amount <= 0){ toast("Enter a valid amount."); return; }
+  state.employeePayments.push({
+    id: uid(), employeeId: currentDetailEmployeeId, amount: amount,
+    paidDate: document.getElementById("empPayDate").value,
+    clientId: document.getElementById("empPayClient").value,
+    notes: document.getElementById("empPayNotes").value.trim()
+  });
+  saveEmployeePayments();
+  openEmployeeDetail(currentDetailEmployeeId);
+  toast("Payment logged.");
+});
+function deleteEmployeePayment(id){
+  if(!confirm("Delete this payment record?")) return;
+  state.employeePayments = state.employeePayments.filter(function(p){ return p.id !== id; });
+  saveEmployeePayments();
+  if(currentDetailEmployeeId) openEmployeeDetail(currentDetailEmployeeId);
+  toast("Payment deleted.");
+}
 
 // ================= PAYMENTS =================
 function populatePaymentClientSelect(){
@@ -1431,10 +1511,7 @@ function showReceipt(paymentId){
   var statusEl = document.getElementById("receiptStatusNote");
   if(fee && p.amount < fee){
     statusEl.style.display = "block";
-    statusEl.style.background = "#fef3c7";
-    statusEl.style.color = "#92400e";
-    statusEl.style.borderColor = "#92400e";
-    statusEl.textContent = "⚠ Partial payment — this transaction covers " + money(p.amount) + " of the " + money(fee) + " monthly fee.";
+    statusEl.textContent = "⚠ Partial Payment — this transaction covers " + money(p.amount) + " of the " + money(fee) + " monthly fee.";
   } else {
     statusEl.style.display = "none";
   }
@@ -1473,14 +1550,11 @@ function showMonthReceipt(clientId, period){
   var statusEl = document.getElementById("receiptStatusNote");
   statusEl.style.display = "block";
   if(fee && total < fee){
-    statusEl.style.background = "#fee2e2"; statusEl.style.color = "#991b1b"; statusEl.style.borderColor = "#991b1b";
-    statusEl.textContent = "Short by " + money(fee - total) + " against the " + money(fee) + " monthly fee.";
+    statusEl.textContent = "⚠ Short by " + money(fee - total) + " against the " + money(fee) + " monthly fee.";
   } else if(fee && total > fee){
-    statusEl.style.background = "#fef3c7"; statusEl.style.color = "#92400e"; statusEl.style.borderColor = "#92400e";
-    statusEl.textContent = "Overpaid by " + money(total - fee) + " against the " + money(fee) + " monthly fee.";
+    statusEl.textContent = "+ Overpaid by " + money(total - fee) + " against the " + money(fee) + " monthly fee.";
   } else {
-    statusEl.style.background = "#dcfce7"; statusEl.style.color = "#166534"; statusEl.style.borderColor = "#166534";
-    statusEl.textContent = "Fully paid for this month.";
+    statusEl.textContent = "✓ Fully paid for this month.";
   }
 
   document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
@@ -1778,7 +1852,7 @@ window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
   editEmployee: editEmployee, deleteEmployee: deleteEmployee, openClientDetail: openClientDetail,
   openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay, showReceipt: showReceipt,
-  showMonthReceipt: showMonthReceipt
+  showMonthReceipt: showMonthReceipt, deleteEmployeePayment: deleteEmployeePayment
 };
 
 // ================= BOOT =================
@@ -1791,6 +1865,7 @@ if(cloudReady()){
       if(k === "clients") state.clients = data.clients;
       if(k === "payments") state.payments = data.payments;
       if(k === "employees") state.employees = data.employees;
+      if(k === "employeePayments") state.employeePayments = data.employeePayments;
     });
     renderClients(); renderEmployees(); renderPayments(); renderDashboard();
     if(!hadLocalData) toast("Synced with cloud.");

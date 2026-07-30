@@ -71,9 +71,24 @@ create index if not exists idx_crm_payments_client_id on crm_payments(client_id)
 create index if not exists idx_crm_payments_period on crm_payments(period);
 create index if not exists idx_crm_clients_employee_id on crm_clients(employee_id);
 
+-- Payments YOU make TO an employee (e.g. commission/salary) — separate from
+-- crm_payments, which is what CLIENTS pay you. client_id is optional: only
+-- set when this payout is tied to a specific client the employee landed.
+create table if not exists crm_employee_payments (
+  id text primary key,
+  employee_id text not null,
+  amount numeric default 0,
+  paid_date date,
+  client_id text default '', -- optional — which client this payout relates to, if any
+  notes text default ''
+);
+
+create index if not exists idx_crm_employee_payments_employee_id on crm_employee_payments(employee_id);
+
 alter table crm_employees enable row level security;
 alter table crm_clients enable row level security;
 alter table crm_payments enable row level security;
+alter table crm_employee_payments enable row level security;
 
 -- ============== sync_pull_crm: read everything back ==============
 
@@ -103,7 +118,12 @@ begin
     'employees', coalesce((select jsonb_agg(jsonb_build_object(
       'id', id, 'name', name, 'phone', phone, 'role', role, 'status', status,
       'joinDate', join_date, 'notes', notes
-    )) from crm_employees), '[]'::jsonb)
+    )) from crm_employees), '[]'::jsonb),
+
+    'employeePayments', coalesce((select jsonb_agg(jsonb_build_object(
+      'id', id, 'employeeId', employee_id, 'amount', amount, 'paidDate', paid_date,
+      'clientId', client_id, 'notes', notes
+    )) from crm_employee_payments), '[]'::jsonb)
   ) into result;
   return result;
 end;
@@ -163,12 +183,30 @@ begin
 end;
 $$;
 
+-- ============== sync_replace_crm_employee_payments: instant full replace ==============
+
+create or replace function sync_replace_crm_employee_payments(employee_payments jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from crm_employee_payments where true;
+  insert into crm_employee_payments (id, employee_id, amount, paid_date, client_id, notes)
+  select x->>'id', x->>'employeeId', coalesce((x->>'amount')::numeric,0),
+         nullif(x->>'paidDate','')::date, coalesce(x->>'clientId',''), coalesce(x->>'notes','')
+  from jsonb_array_elements(employee_payments) x;
+end;
+$$;
+
 -- ============== grant access ONLY to the functions above ==============
 
 grant execute on function sync_pull_crm() to anon;
 grant execute on function sync_replace_crm_clients(jsonb) to anon;
 grant execute on function sync_replace_crm_payments(jsonb) to anon;
 grant execute on function sync_replace_crm_employees(jsonb) to anon;
+grant execute on function sync_replace_crm_employee_payments(jsonb) to anon;
 
 -- ============== APP LOGIN (real username + password) ==============
 -- Replaces the old hardcoded-in-JavaScript password with a real
