@@ -80,8 +80,12 @@ create table if not exists crm_employee_payments (
   amount numeric default 0,
   paid_date date,
   client_id text default '', -- optional — which client this payout relates to, if any
+  pay_type text default 'salary', -- salary | commission
   notes text default ''
 );
+
+-- Safe to re-run — no-op if the column already exists.
+alter table crm_employee_payments add column if not exists pay_type text default 'salary';
 
 create index if not exists idx_crm_employee_payments_employee_id on crm_employee_payments(employee_id);
 
@@ -122,7 +126,7 @@ begin
 
     'employeePayments', coalesce((select jsonb_agg(jsonb_build_object(
       'id', id, 'employeeId', employee_id, 'amount', amount, 'paidDate', paid_date,
-      'clientId', client_id, 'notes', notes
+      'clientId', client_id, 'payType', pay_type, 'notes', notes
     )) from crm_employee_payments), '[]'::jsonb)
   ) into result;
   return result;
@@ -204,9 +208,9 @@ set search_path = public
 as $$
 begin
   delete from crm_employee_payments where true;
-  insert into crm_employee_payments (id, employee_id, amount, paid_date, client_id, notes)
+  insert into crm_employee_payments (id, employee_id, amount, paid_date, client_id, pay_type, notes)
   select x->>'id', x->>'employeeId', coalesce((x->>'amount')::numeric,0),
-         nullif(x->>'paidDate','')::date, coalesce(x->>'clientId',''), coalesce(x->>'notes','')
+         nullif(x->>'paidDate','')::date, coalesce(x->>'clientId',''), coalesce(x->>'payType','salary'), coalesce(x->>'notes','')
   from jsonb_array_elements("employeePayments") x;
 end;
 $$;
