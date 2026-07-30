@@ -93,10 +93,23 @@ alter table crm_employee_payments add column if not exists method text default '
 
 create index if not exists idx_crm_employee_payments_employee_id on crm_employee_payments(employee_id);
 
+-- YOUR OWN reseller-business expenses (rent, utilities, marketing, etc.) —
+-- separate from crm_payments (clients paying you) and crm_employee_payments
+-- (you paying employees). Powers the Financials tab's Money Out figure.
+create table if not exists crm_expenses (
+  id text primary key,
+  period text default '', -- e.g. '2026-07' — which month this expense is FOR
+  date date, -- when it was actually paid/entered
+  category text default '',
+  amount numeric default 0,
+  notes text default ''
+);
+
 alter table crm_employees enable row level security;
 alter table crm_clients enable row level security;
 alter table crm_payments enable row level security;
 alter table crm_employee_payments enable row level security;
+alter table crm_expenses enable row level security;
 
 -- ============== sync_pull_crm: read everything back ==============
 
@@ -131,7 +144,11 @@ begin
     'employeePayments', coalesce((select jsonb_agg(jsonb_build_object(
       'id', id, 'employeeId', employee_id, 'period', period, 'amount', amount, 'paidDate', paid_date,
       'method', method, 'clientId', client_id, 'payType', pay_type, 'notes', notes
-    )) from crm_employee_payments), '[]'::jsonb)
+    )) from crm_employee_payments), '[]'::jsonb),
+
+    'expenses', coalesce((select jsonb_agg(jsonb_build_object(
+      'id', id, 'period', period, 'date', date, 'category', category, 'amount', amount, 'notes', notes
+    )) from crm_expenses), '[]'::jsonb)
   ) into result;
   return result;
 end;
@@ -220,11 +237,27 @@ begin
 end;
 $$;
 
+create or replace function sync_replace_crm_expenses(expenses jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from crm_expenses where true;
+  insert into crm_expenses (id, period, date, category, amount, notes)
+  select x->>'id', coalesce(x->>'period',''), nullif(x->>'date','')::date, coalesce(x->>'category',''),
+         coalesce((x->>'amount')::numeric,0), coalesce(x->>'notes','')
+  from jsonb_array_elements(expenses) x;
+end;
+$$;
+
 -- ============== grant access ONLY to the functions above ==============
 
 grant execute on function sync_pull_crm() to anon;
 grant execute on function sync_replace_crm_clients(jsonb) to anon;
 grant execute on function sync_replace_crm_payments(jsonb) to anon;
+grant execute on function sync_replace_crm_expenses(jsonb) to anon;
 grant execute on function sync_replace_crm_employees(jsonb) to anon;
 grant execute on function sync_replace_crm_employee_payments(jsonb) to anon;
 

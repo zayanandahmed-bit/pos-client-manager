@@ -124,6 +124,7 @@
     <button class="nav-btn" data-view="clients">🏬 Clients</button>
     <button class="nav-btn" data-view="employees">🧑‍💼 Employees</button>
     <button class="nav-btn" data-view="payments">💰 Payments</button>
+    <button class="nav-btn" data-view="financials">📊 Financials</button>
     <button class="nav-btn" data-view="settings">⚙️ Settings</button>
   </div>
 
@@ -516,6 +517,77 @@
         </div>
       </div>
 
+      <!-- FINANCIALS -->
+      <div class="view" id="view-financials">
+        <div class="panel">
+          <h3 style="margin-top:0;">Money In vs Money Out</h3>
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button class="btn secondary small fin-range-tab" data-range="week">This Week</button>
+            <button class="btn small fin-range-tab active" data-range="month">This Month</button>
+            <button class="btn secondary small fin-range-tab" data-range="all">All Time</button>
+            <button class="btn secondary small fin-range-tab" data-range="custom">Custom</button>
+          </div>
+          <div class="grid grid-2" id="finCustomRangeBox" style="display:none;margin-top:12px;">
+            <div><label>From</label><input type="date" id="finCustomFrom"></div>
+            <div><label>To</label><input type="date" id="finCustomTo"></div>
+          </div>
+
+          <div class="grid grid-3" style="margin-top:14px;">
+            <div class="panel stat-card" style="border-color:var(--green);">
+              <div class="label">Money In (Client Payments)</div>
+              <div class="value" id="finMoneyIn">Rs 0</div>
+            </div>
+            <div class="panel stat-card" style="border-color:var(--red);">
+              <div class="label">Money Out (Employees + Expenses)</div>
+              <div class="value" id="finMoneyOut">Rs 0</div>
+            </div>
+            <div class="panel stat-card" id="finNetCard" style="border-color:var(--blue);">
+              <div class="label">Net Profit / Loss</div>
+              <div class="value" id="finNet">Rs 0</div>
+            </div>
+          </div>
+          <p class="hint" style="margin-top:8px;">Money Out breaks down as: Employee Payments <span id="finEmployeesOut">Rs 0</span> + Other Expenses <span id="finExpensesOut">Rs 0</span>.</p>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin-top:0;">Log a Business Expense</h3>
+          <p class="hint">For rent, utilities, marketing, and other costs of running your reseller business — not client or employee payments (those are tracked on their own tabs).</p>
+          <div class="grid grid-4">
+            <div><label>Month (which period this is for) *</label><input type="month" id="expensePeriod"></div>
+            <div><label>Date Paid *</label><input type="date" id="expenseDate"></div>
+            <div>
+              <label>Category *</label>
+              <select id="expenseCategory">
+                <option>Rent</option>
+                <option>Utilities</option>
+                <option>Marketing</option>
+                <option>Transport</option>
+                <option>Software/Tools</option>
+                <option>Miscellaneous</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div><label>Amount (PKR) *</label><input type="number" id="expenseAmount" min="0" step="100"></div>
+          </div>
+          <div style="margin-top:12px;"><label>Notes</label><input id="expenseNotes" placeholder="Optional"></div>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn green" id="saveExpenseBtn">Log Expense</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="flex-between">
+            <h3 style="margin:0;">Expenses (this range)</h3>
+            <span id="expenseSummary" style="font-size:13px;color:var(--muted);"></span>
+          </div>
+          <table>
+            <thead><tr><th>Month</th><th>Date Paid</th><th>Category</th><th>Amount</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="expenseBody"></tbody>
+          </table>
+          <div id="expenseEmpty" class="empty" style="display:none;">No expenses logged in this range.</div>
+        </div>
+      </div>
+
       <!-- SETTINGS -->
       <div class="view" id="view-settings">
         <div class="panel" id="ownerGatePanel">
@@ -640,12 +712,13 @@ var state = {
   payments: [],
   employees: [],
   employeePayments: [],
+  expenses: [],
   cloud: { url: BUILT_IN_SUPABASE_URL, secret: BUILT_IN_SUPABASE_ANON_KEY, enabled: true, lastSync: null }
 };
 
 var LOCAL_STORAGE_KEY = "crmDashboard_localState_v1";
 function saveLocalState(){
-  try{ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ clients: state.clients, payments: state.payments, employees: state.employees, employeePayments: state.employeePayments })); }catch(e){}
+  try{ localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ clients: state.clients, payments: state.payments, employees: state.employees, employeePayments: state.employeePayments, expenses: state.expenses })); }catch(e){}
 }
 function loadLocalState(){
   try{
@@ -656,6 +729,7 @@ function loadLocalState(){
     if(data.payments) state.payments = data.payments;
     if(data.employees) state.employees = data.employees;
     if(data.employeePayments) state.employeePayments = data.employeePayments;
+    if(data.expenses) state.expenses = data.expenses;
     return true;
   }catch(e){ return false; }
 }
@@ -719,7 +793,7 @@ function setCloudStatus(kind, detail){
 
 var domainTimers = {};
 var domainInFlight = {};
-var DOMAIN_RPC = { clients: "sync_replace_crm_clients", payments: "sync_replace_crm_payments", employees: "sync_replace_crm_employees", employeePayments: "sync_replace_crm_employee_payments" };
+var DOMAIN_RPC = { clients: "sync_replace_crm_clients", payments: "sync_replace_crm_payments", employees: "sync_replace_crm_employees", employeePayments: "sync_replace_crm_employee_payments", expenses: "sync_replace_crm_expenses" };
 
 function pushDomainInstant(domain){
   dirty[domain] = true;
@@ -763,11 +837,13 @@ function applyCloudData(data){
   if(data.payments) state.payments = data.payments;
   if(data.employees) state.employees = data.employees;
   if(data.employeePayments) state.employeePayments = data.employeePayments;
+  if(data.expenses) state.expenses = data.expenses;
 }
 
 function saveClients(){ saveLocalState(); pushDomainInstant("clients"); }
 function savePayments(){ saveLocalState(); pushDomainInstant("payments"); }
 function saveEmployees(){ saveLocalState(); pushDomainInstant("employees"); }
+function saveExpenses(){ saveLocalState(); pushDomainInstant("expenses"); }
 function saveEmployeePayments(){ saveLocalState(); pushDomainInstant("employeePayments"); }
 
 // ================= NAV =================
@@ -776,6 +852,7 @@ var VIEW_META = {
   clients: { title: "Clients", sub: "Add, edit, and manage your client stores" },
   employees: { title: "Employees", sub: "Track who signed each client" },
   payments: { title: "Payments", sub: "Log and browse client payment history" },
+  financials: { title: "Financials", sub: "Your own money in vs money out, and net profit" },
   settings: { title: "Settings", sub: "Cloud sync configuration" }
 };
 document.querySelectorAll(".nav-btn").forEach(function(btn){
@@ -791,6 +868,7 @@ document.querySelectorAll(".nav-btn").forEach(function(btn){
     if(btn.dataset.view === "clients"){ populateClientEmployeeSelect(); renderClients(); }
     if(btn.dataset.view === "employees") renderEmployees();
     if(btn.dataset.view === "payments"){ populatePaymentClientSelect(); renderPayments(); }
+    if(btn.dataset.view === "financials") loadFinancialsRange();
     if(btn.dataset.view === "settings") loadSettingsForm();
   });
 });
@@ -1990,6 +2068,147 @@ document.getElementById("changeOwnerPasswordBtn").addEventListener("click", func
   });
 });
 
+// ================= FINANCIALS (your own money in vs money out) =================
+var finRange = { mode: "month" };
+function getFinRangeBounds(){
+  var today = new Date();
+  if(finRange.mode === "week"){
+    var weekAgo = new Date(today.getTime());
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    return { from: isoDate(weekAgo), to: isoDate(today) };
+  }
+  if(finRange.mode === "month"){
+    var first = new Date(today.getFullYear(), today.getMonth(), 1);
+    var last = new Date(today.getFullYear(), today.getMonth()+1, 0);
+    return { from: isoDate(first), to: isoDate(last) };
+  }
+  if(finRange.mode === "custom"){
+    var from = document.getElementById("finCustomFrom").value || null;
+    var to = document.getElementById("finCustomTo").value || null;
+    return { from: from, to: to };
+  }
+  return { from: null, to: null }; // "all"
+}
+function loadFinancialsRange(){ renderFinancials(); }
+document.querySelectorAll(".fin-range-tab").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    document.querySelectorAll(".fin-range-tab").forEach(function(b){ b.classList.toggle("secondary", b !== btn); b.classList.remove("active"); });
+    btn.classList.add("active");
+    finRange.mode = btn.dataset.range;
+    document.getElementById("finCustomRangeBox").style.display = finRange.mode === "custom" ? "grid" : "none";
+    renderFinancials();
+  });
+});
+document.getElementById("finCustomFrom").addEventListener("change", renderFinancials);
+document.getElementById("finCustomTo").addEventListener("change", renderFinancials);
+
+function inFinRange(dateStr, bounds){
+  if(!dateStr) return false;
+  if(bounds.from && dateStr < bounds.from) return false;
+  if(bounds.to && dateStr > bounds.to) return false;
+  return true;
+}
+
+function renderFinancials(){
+  var bounds = getFinRangeBounds();
+
+  var paymentsInRange = state.payments.filter(function(p){ return inFinRange(p.paidDate, bounds); });
+  var moneyIn = paymentsInRange.reduce(function(s,p){ return s + (p.amount||0); }, 0);
+
+  var empPaysInRange = state.employeePayments.filter(function(p){ return inFinRange(p.paidDate, bounds); });
+  var employeesOut = empPaysInRange.reduce(function(s,p){ return s + (p.amount||0); }, 0);
+
+  var expensesInRange = state.expenses.filter(function(e){ return inFinRange(e.date, bounds); })
+    .sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
+  var expensesOut = expensesInRange.reduce(function(s,e){ return s + (e.amount||0); }, 0);
+
+  var moneyOut = employeesOut + expensesOut;
+  var net = moneyIn - moneyOut;
+
+  document.getElementById("finMoneyIn").textContent = money(moneyIn);
+  document.getElementById("finMoneyOut").textContent = money(moneyOut);
+  document.getElementById("finNet").textContent = money(net);
+  document.getElementById("finNetCard").style.borderColor = net >= 0 ? "var(--green)" : "var(--red)";
+  document.getElementById("finEmployeesOut").textContent = money(employeesOut);
+  document.getElementById("finExpensesOut").textContent = money(expensesOut);
+
+  var body = document.getElementById("expenseBody");
+  var empty = document.getElementById("expenseEmpty");
+  empty.style.display = expensesInRange.length === 0 ? "block" : "none";
+  document.getElementById("expenseSummary").textContent = expensesInRange.length + " expense(s) · Total: " + money(expensesOut);
+  body.innerHTML = expensesInRange.map(function(e){
+    return "<tr>" +
+      "<td>" + (e.period||"—") + "</td>" +
+      "<td>" + (e.date||"—") + "</td>" +
+      "<td>" + escapeHtml(e.category||"—") + "</td>" +
+      "<td>" + money(e.amount) + "</td>" +
+      "<td>" + escapeHtml(e.notes||"") + "</td>" +
+      "<td><button class='btn secondary small' onclick=\"CRM.showExpenseReceipt('" + e.id + "')\">Receipt</button> " +
+      "<button class='btn danger small' onclick=\"CRM.deleteExpense('" + e.id + "')\">Delete</button></td>" +
+    "</tr>";
+  }).join("");
+}
+
+function defaultPeriodStr(){
+  var now = new Date();
+  return now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+}
+document.getElementById("expensePeriod").value = defaultPeriodStr();
+document.getElementById("expenseDate").value = new Date().toISOString().slice(0,10);
+
+document.getElementById("saveExpenseBtn").addEventListener("click", function(){
+  var period = document.getElementById("expensePeriod").value;
+  var date = document.getElementById("expenseDate").value;
+  var category = document.getElementById("expenseCategory").value;
+  var amount = parseFloat(document.getElementById("expenseAmount").value);
+  var notes = document.getElementById("expenseNotes").value.trim();
+  if(!period || !date || isNaN(amount) || amount <= 0){ toast("Please fill in all required fields correctly."); return; }
+  state.expenses.push({ id: uid(), period: period, date: date, category: category, amount: amount, notes: notes });
+  saveExpenses();
+  document.getElementById("expenseAmount").value = "";
+  document.getElementById("expenseNotes").value = "";
+  renderFinancials();
+  toast("Expense logged.");
+});
+
+function deleteExpense(id){
+  if(!confirm("Delete this expense record?")) return;
+  state.expenses = state.expenses.filter(function(e){ return e.id !== id; });
+  saveExpenses();
+  renderFinancials();
+  toast("Expense deleted.");
+}
+
+// Reuses the shared black-and-white receipt modal, relabeled for a
+// business expense: no fee to compare against, so no status note.
+function showExpenseReceipt(expenseId){
+  var e = state.expenses.find(function(x){ return x.id === expenseId; });
+  if(!e) return;
+  resetReceiptChrome();
+
+  document.getElementById("receiptTitle").textContent = "EXPENSE RECEIPT";
+  document.getElementById("receiptSubtitle").textContent = "Business Expense";
+  document.getElementById("receiptSubline").textContent = e.category || "Expense";
+  document.getElementById("receiptOwnerLabel").textContent = "Month";
+  document.getElementById("receiptOwner").textContent = e.period || "—";
+  document.getElementById("receiptPeriodLabel").textContent = "Date Paid";
+  document.getElementById("receiptPeriod").textContent = e.date || "—";
+  document.getElementById("receiptAmountLabel").textContent = "Amount";
+  document.getElementById("receiptAmount").textContent = money(e.amount);
+  document.getElementById("receiptPaidDateRow").style.display = "none";
+  document.getElementById("receiptMethodRow").style.display = "none";
+  document.getElementById("receiptExtraRow").style.display = "none";
+  document.getElementById("receiptNotes").textContent = e.notes || "—";
+  document.getElementById("receiptInstallments").style.display = "none";
+  document.getElementById("receiptStatusNote").style.display = "none";
+  document.getElementById("receiptThanksTitle").textContent = "Expense recorded.";
+  document.getElementById("receiptThanksSubtitle").textContent = "Keep this for your own business records.";
+
+  document.getElementById("receiptPrintedOn").textContent = new Date().toLocaleString();
+  document.getElementById("receiptId").textContent = e.id;
+  document.getElementById("receiptOverlay").classList.add("show");
+}
+
 // ================= EXPOSE FOR INLINE HANDLERS =================
 window.CRM = {
   editClient: editClient, deleteClient: deleteClient, deletePayment: deletePayment, jumpToLogPayment: jumpToLogPayment,
@@ -1997,7 +2216,8 @@ window.CRM = {
   openEmployeeDetail: openEmployeeDetail, prefillQuickPay: prefillQuickPay, showReceipt: showReceipt,
   showMonthReceipt: showMonthReceipt, deleteEmployeePayment: deleteEmployeePayment,
   showEmployeeReceipt: showEmployeeReceipt, showEmployeeMonthReceipt: showEmployeeMonthReceipt,
-  prefillEmployeeQuickPay: prefillEmployeeQuickPay
+  prefillEmployeeQuickPay: prefillEmployeeQuickPay,
+  showExpenseReceipt: showExpenseReceipt, deleteExpense: deleteExpense
 };
 
 // ================= BOOT =================
@@ -2011,8 +2231,9 @@ if(cloudReady()){
       if(k === "payments") state.payments = data.payments;
       if(k === "employees") state.employees = data.employees;
       if(k === "employeePayments") state.employeePayments = data.employeePayments;
+      if(k === "expenses") state.expenses = data.expenses;
     });
-    renderClients(); renderEmployees(); renderPayments(); renderDashboard();
+    renderClients(); renderEmployees(); renderPayments(); renderDashboard(); renderFinancials();
     if(!hadLocalData) toast("Synced with cloud.");
   }).catch(function(err){
     toast("Couldn't reach the database — check your internet connection.");
