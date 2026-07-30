@@ -185,7 +185,12 @@ $$;
 
 -- ============== sync_replace_crm_employee_payments: instant full replace ==============
 
-create or replace function sync_replace_crm_employee_payments(employee_payments jsonb)
+-- Parameter name is double-quoted to preserve exact camelCase — Postgres
+-- silently lowercases unquoted identifiers, which would otherwise mismatch
+-- the "employeePayments" JSON key the app actually sends and break PostgREST's
+-- RPC parameter matching (as happened here — same reason every OTHER sync
+-- function below gets away with an unquoted name: they're already all-lowercase).
+create or replace function sync_replace_crm_employee_payments("employeePayments" jsonb)
 returns void
 language plpgsql
 security definer
@@ -196,7 +201,7 @@ begin
   insert into crm_employee_payments (id, employee_id, amount, paid_date, client_id, notes)
   select x->>'id', x->>'employeeId', coalesce((x->>'amount')::numeric,0),
          nullif(x->>'paidDate','')::date, coalesce(x->>'clientId',''), coalesce(x->>'notes','')
-  from jsonb_array_elements(employee_payments) x;
+  from jsonb_array_elements("employeePayments") x;
 end;
 $$;
 
